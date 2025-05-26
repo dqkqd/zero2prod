@@ -1,10 +1,6 @@
-use axum::{Router, routing::get};
+use zero2prod::run;
 
 #[tokio::main]
-async fn main() {
-    let app = Router::new().route("/health_check", get(health_check));
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+async fn main() -> std::io::Result<()> {
+    run().await
 }
-
-async fn health_check() {}
