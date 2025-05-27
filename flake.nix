@@ -21,6 +21,11 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             bashInteractive
+
+            # ci
+            act
+
+            # rust dev
             cargo
             clippy
             rustc
