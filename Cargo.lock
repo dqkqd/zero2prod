@@ -806,6 +806,7 @@ dependencies = [
  "axum",
  "mime",
  "rstest",
+ "serde",
  "tokio",
  "tower",
 ]
