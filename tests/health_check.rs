@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use axum::{
     body::Body,
     http::{self, Request, StatusCode, header::CONTENT_LENGTH},
@@ -34,7 +32,6 @@ async fn subscribe_return_a_200_for_valid_form_data() {
     let settings = get_configuration().expect("failed to get configuration");
     let pool = PgPoolOptions::new()
         .max_connections(5)
-        .acquire_timeout(Duration::from_secs(5))
         .connect(&settings.database.connection_string())
         .await
         .expect("can't connect to database");
@@ -57,6 +54,14 @@ async fn subscribe_return_a_200_for_valid_form_data() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+
+    let saved = sqlx::query!("SELECT name, email from subscriptions")
+        .fetch_one(&pool)
+        .await
+        .expect("failed to fetch saved subscriptions");
+
+    assert_eq!(saved.email, "ursula_le_guin@gmail.com");
+    assert_eq!(saved.name, "le guin");
 }
 
 #[rstest]
