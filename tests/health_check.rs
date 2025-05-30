@@ -1,10 +1,13 @@
+use std::time::Duration;
+
 use axum::{
     body::Body,
     http::{self, Request, StatusCode, header::CONTENT_LENGTH},
 };
 use rstest::rstest;
+use sqlx::postgres::PgPoolOptions;
 use tower::ServiceExt;
-use zero2prod::app;
+use zero2prod::{app, configuration::get_configuration};
 
 #[tokio::test]
 async fn health_check_works() {
@@ -27,6 +30,14 @@ async fn health_check_works() {
 #[tokio::test]
 async fn subscribe_return_a_200_for_valid_form_data() {
     let app = app();
+
+    let settings = get_configuration().expect("failed to get configuration");
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(Duration::from_secs(5))
+        .connect(&settings.database.connection_string())
+        .await
+        .expect("can't connect to database");
 
     let response = app
         .oneshot(

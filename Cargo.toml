@@ -12,7 +12,7 @@ tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread"] }
 [dependencies.sqlx]
 version = "0.8.6"
 default-features = false
-features = ["postgres"]
+features = ["postgres", "runtime-tokio", "tls-rustls"]
 
 
 [dev-dependencies]
