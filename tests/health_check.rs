@@ -1,4 +1,5 @@
 use axum::{
+    Router,
     body::Body,
     http::{self, Request, StatusCode, header::CONTENT_LENGTH},
 };
@@ -7,9 +8,19 @@ use sqlx::postgres::PgPoolOptions;
 use tower::ServiceExt;
 use zero2prod::{app, configuration::get_configuration};
 
+async fn spawn_app() -> Router {
+    let settings = get_configuration().expect("failed to get configuration");
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&settings.database.connection_string())
+        .await
+        .expect("can't connect to database");
+    app(pool)
+}
+
 #[tokio::test]
 async fn health_check_works() {
-    let app = app();
+    let app = spawn_app().await;
 
     let response = app
         .oneshot(
@@ -27,7 +38,7 @@ async fn health_check_works() {
 
 #[tokio::test]
 async fn subscribe_return_a_200_for_valid_form_data() {
-    let app = app();
+    let app = spawn_app().await;
 
     let settings = get_configuration().expect("failed to get configuration");
     let pool = PgPoolOptions::new()
@@ -70,7 +81,7 @@ async fn subscribe_return_a_200_for_valid_form_data() {
 #[case::missing_both_name_and_email("")]
 #[tokio::test]
 async fn subscribe_return_a_400_when_data_is_missing(#[case] invalid_body: &'static str) {
-    let app = app();
+    let app = spawn_app().await;
 
     let response = app
         .oneshot(
