@@ -51,6 +51,8 @@ jobs:
 
   clippy:
     runs-on: ubuntu-latest
+    env:
+      SQLX_OFFLINE: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
