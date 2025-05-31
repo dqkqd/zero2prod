@@ -5,14 +5,24 @@ edition = "2024"
 
 [dependencies]
 axum = { version = "0.8.4", features = ["macros"] }
+chrono = "0.4.41"
 config = "0.15.11"
 serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread"] }
+uuid = { version = "1.17.0", features = ["v4"] }
 
 [dependencies.sqlx]
 version = "0.8.6"
 default-features = false
-features = ["macros", "postgres", "runtime-tokio", "tls-rustls"]
+features = [
+  "chrono",
+  "macros",
+  "migrate",
+  "postgres",
+  "runtime-tokio",
+  "tls-rustls",
+  "uuid",
+]
 
 
 [dev-dependencies]
