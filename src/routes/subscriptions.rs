@@ -15,7 +15,14 @@ pub async fn subscribe(
     State(pool): State<PgPool>,
     Form(form): Form<FormData>,
 ) -> Result<(), StatusCode> {
-    sqlx::query!(
+    tracing::info!(
+        "adding '{}' '{}' as a new subscriber",
+        form.email,
+        form.name
+    );
+
+    tracing::info!("saving new subscriber detail in the database");
+    match sqlx::query!(
         r#"
         INSERT INTO subscriptions (id, email, name, subscribed_at)
         VALUES ($1, $2, $3, $4)
@@ -27,6 +34,14 @@ pub async fn subscribe(
     )
     .execute(&pool)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(())
+    {
+        Ok(_) => {
+            tracing::info!("new subscriber details have been saved");
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!("failed to execute query: {:?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
