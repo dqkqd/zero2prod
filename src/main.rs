@@ -12,7 +12,7 @@ async fn main() -> std::io::Result<()> {
                 format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
             }),
         )
-        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer().json())
         .init();
 
     let configuration = get_configuration().expect("failed to read configuration");
