@@ -6,7 +6,6 @@ use axum::{
 };
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
-use uuid::Uuid;
 
 use crate::routes::{health_check, subscribe};
 
@@ -17,14 +16,17 @@ pub fn app(pool: PgPool) -> Router {
         .with_state(pool)
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
-                let request_id = Uuid::new_v4();
-                tracing::debug_span!(
-                "request",
-                method=?request.method(),
-                uri=?request.uri(),
-                version=?request.version(),
-                request_id=tracing::field::display(request_id)
-                )
+                let span = tracing::debug_span!(
+                    "request",
+                    method=?request.method(),
+                    uri=?request.uri(),
+                    version=?request.version(),
+                    request_id = tracing::field::Empty
+                );
+                if let Some(id) = span.id() {
+                    span.record("request_id", id.into_u64());
+                }
+                span
             }),
         )
 }

@@ -11,17 +11,13 @@ pub struct FormData {
 }
 
 #[axum::debug_handler]
+#[tracing::instrument(skip(pool))]
 pub async fn subscribe(
     State(pool): State<PgPool>,
     Form(form): Form<FormData>,
 ) -> Result<(), StatusCode> {
-    tracing::info!(
-        "adding '{}' '{}' as a new subscriber",
-        form.email,
-        form.name
-    );
+    tracing::info!("adding new subscriber detail to database",);
 
-    tracing::info!("saving new subscriber detail in the database");
     match sqlx::query!(
         r#"
         INSERT INTO subscriptions (id, email, name, subscribed_at)
@@ -40,7 +36,7 @@ pub async fn subscribe(
             Ok(())
         }
         Err(e) => {
-            tracing::error!("failed to execute query: {:?}", e);
+            tracing::error!(error = ?e, "failed to execute query");
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
