@@ -2,6 +2,7 @@ use axum::{Form, extract::State, http::StatusCode};
 use chrono::Utc;
 use serde::Deserialize;
 use sqlx::PgPool;
+use tracing::Instrument;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +30,7 @@ pub async fn subscribe(
         Utc::now(),
     )
     .execute(&pool)
+    .instrument(tracing::Span::current())
     .await
     {
         Ok(_) => {
