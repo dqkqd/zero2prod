@@ -1,19 +1,11 @@
 use std::time::Duration;
 
 use sqlx::postgres::PgPoolOptions;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use zero2prod::{configuration::get_configuration, run};
+use zero2prod::{configuration::get_configuration, run, telemetry::init_subscriber};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
-            }),
-        )
-        .with(tracing_subscriber::fmt::layer().json())
-        .init();
+    init_subscriber("info".into());
 
     let configuration = get_configuration().expect("failed to read configuration");
     let address = format!("127.0.0.1:{}", configuration.application_port);
