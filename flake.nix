@@ -51,6 +51,7 @@
 
             sqlx-cli
             cargo-udeps
+            jq
           ];
         };
       }

@@ -3,6 +3,7 @@ use axum::{
     body::Body,
     http::{self, Request, StatusCode, header::CONTENT_LENGTH},
 };
+use once_cell::sync::Lazy;
 use rstest::rstest;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
@@ -10,7 +11,14 @@ use uuid::Uuid;
 use zero2prod::{
     app,
     configuration::{DatabaseSettings, get_configuration},
+    telemetry::init_subscriber,
 };
+
+static TRACING: Lazy<()> = Lazy::new(|| {
+    if std::env::var("TEST_LOG").is_ok() {
+        init_subscriber("debug".into());
+    }
+});
 
 struct TestApp {
     router: Router,
@@ -18,6 +26,8 @@ struct TestApp {
 }
 
 async fn spawn_app() -> TestApp {
+    Lazy::force(&TRACING);
+
     let mut settings = get_configuration().expect("failed to get configuration");
     settings.database.database_name = Uuid::new_v4().to_string();
     configure_database(&settings.database).await;
