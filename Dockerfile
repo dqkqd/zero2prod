@@ -17,7 +17,8 @@ FROM scratch
 WORKDIR /app
 
 COPY --from=builder /tmp/nix-store-closure /nix/store
-COPY --from=builder /tmp/build/result /app
-COPY --from=builder /tmp/build/configuration.yaml /app
+COPY --from=builder /tmp/build/result /app/result
+COPY --from=builder /tmp/build/configuration /app/configuration
 
-CMD ["/app/bin/zero2prod"]
+ENV APP_ENVIRONMENT=production
+ENTRYPOINT ["/app/result/bin/zero2prod"]

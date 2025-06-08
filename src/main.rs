@@ -8,7 +8,10 @@ async fn main() -> std::io::Result<()> {
     init_subscriber("info".into());
 
     let configuration = get_configuration().expect("failed to read configuration");
-    let address = format!("127.0.0.1:{}", configuration.application_port);
+    let address = format!(
+        "{}:{}",
+        configuration.application.host, configuration.application.port
+    );
     let listener = tokio::net::TcpListener::bind(address).await?;
 
     let pool = PgPoolOptions::new()
