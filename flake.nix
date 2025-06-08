@@ -19,6 +19,7 @@
     flake-utils.lib.eachDefaultSystem (
       system: let
         overlays = [(import rust-overlay)];
+
         pkgs = import nixpkgs {inherit system overlays;};
 
         rustNightly =
@@ -33,7 +34,28 @@
                 "rust-analyzer"
               ];
             });
+
+        manifest = pkgs.lib.importTOML ./Cargo.toml;
+
+        default = pkgs.rustPlatform.buildRustPackage {
+          pname = manifest.package.name;
+          version = manifest.package.version;
+
+          src = ./.;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+          };
+
+          # testing require external database
+          doCheck = false;
+
+          env = {
+            SQLX_OFFLINE = true;
+          };
+        };
       in {
+        defaultPackage = default;
+
         devShells.default = pkgs.mkShell {
           buildInputs = [
             pkgs.openssl
