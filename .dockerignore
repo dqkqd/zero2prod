@@ -1,6 +1,11 @@
-.git
-.direnv
-result
+.git/
+.direnv/
+result/
 
 # Added by cargo
-/target
+.env
+target/
+tests/
+Dockerfile
+scripts/
+migrations/

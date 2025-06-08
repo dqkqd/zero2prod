@@ -45,6 +45,7 @@
           cargoLock = {
             lockFile = ./Cargo.lock;
           };
+          release = true;
 
           # testing require external database
           doCheck = false;
