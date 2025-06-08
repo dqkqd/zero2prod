@@ -14,8 +14,7 @@ async fn main() -> std::io::Result<()> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(5))
-        .connect(&configuration.database.connection_string())
-        .await
+        .connect_lazy(&configuration.database.connection_string())
         .expect("can't connect to database");
 
     run(listener, pool).await
