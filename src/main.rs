@@ -5,7 +5,10 @@ use zero2prod::{configuration::get_configuration, run, telemetry::init_subscribe
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    init_subscriber("info".into());
+    init_subscriber(format!(
+        "{}=info,tower_http=debug,axum::rejection=trace",
+        env!("CARGO_CRATE_NAME")
+    ));
 
     let configuration = get_configuration().expect("failed to read configuration");
     let address = format!(

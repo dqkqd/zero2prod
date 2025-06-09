@@ -16,7 +16,7 @@ pub fn app(pool: PgPool) -> Router {
         .with_state(pool)
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
-                let span = tracing::debug_span!(
+                let span = tracing::info_span!(
                     "request",
                     method=?request.method(),
                     uri=?request.uri(),
@@ -33,7 +33,7 @@ pub fn app(pool: PgPool) -> Router {
 
 pub async fn run(listener: tokio::net::TcpListener, pool: PgPool) -> std::io::Result<()> {
     let app = app(pool);
-    tracing::debug!("listening on {}", listener.local_addr().unwrap());
+    tracing::info!("listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await?;
     Ok(())
 }
