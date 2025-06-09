@@ -78,6 +78,8 @@
 
             # digital ocean
             doctl
+            # faster build on deployment
+            cargo-chef
           ];
         };
       }
