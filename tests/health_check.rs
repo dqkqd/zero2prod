@@ -34,7 +34,7 @@ async fn spawn_app() -> TestApp {
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
-        .connect(&settings.database.connection_string())
+        .connect_with(settings.database.with_db())
         .await
         .expect("can't connect to database");
     TestApp {
@@ -45,7 +45,7 @@ async fn spawn_app() -> TestApp {
 
 async fn configure_database(config: &DatabaseSettings) {
     let pool = PgPoolOptions::new()
-        .connect(&config.connection_string_without_db())
+        .connect_with(config.without_db())
         .await
         .expect("can't connect to database");
     sqlx::query(&format!(r#"CREATE DATABASE "{}""#, &config.database_name))
@@ -54,7 +54,7 @@ async fn configure_database(config: &DatabaseSettings) {
         .expect("can't create database");
 
     let pool = PgPoolOptions::new()
-        .connect(&config.connection_string())
+        .connect_with(config.with_db())
         .await
         .expect("can't connect to database");
     sqlx::migrate!("./migrations")
