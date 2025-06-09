@@ -75,6 +75,9 @@
             sqlx-cli
             cargo-udeps
             jq
+
+            # digital ocean
+            doctl
           ];
         };
       }
