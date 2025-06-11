@@ -120,7 +120,36 @@ async fn subscribe_return_a_200_for_valid_form_data() {
 #[case::missing_the_name("email=ursula_le_guin%40gmail.com")]
 #[case::missing_both_name_and_email("")]
 #[tokio::test]
-async fn subscribe_return_a_400_when_data_is_missing(#[case] invalid_body: &'static str) {
+async fn subscribe_return_a_422_when_data_is_missing(#[case] invalid_body: &'static str) {
+    let app = spawn_app().await;
+
+    let response = app
+        .router
+        .oneshot(
+            Request::builder()
+                .method(http::Method::POST)
+                .uri("/subscriptions")
+                .header(
+                    http::header::CONTENT_TYPE,
+                    mime::APPLICATION_WWW_FORM_URLENCODED.as_ref(),
+                )
+                .body(Body::from(invalid_body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[rstest]
+#[case::empty_name("name=&email=ursula_le_guin%40gmail.com")]
+#[case::empty_email("name=Ursula&email=")]
+#[case::invalid_email("name=Ursula&email=definitely-not-an-email")]
+#[tokio::test]
+async fn subscribe_return_a_422_when_fields_are_present_but_invalid(
+    #[case] invalid_body: &'static str,
+) {
     let app = spawn_app().await;
 
     let response = app
