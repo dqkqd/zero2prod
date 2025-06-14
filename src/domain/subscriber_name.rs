@@ -1,10 +1,5 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-pub struct NewSubscriber {
-    pub email: String,
-    pub name: SubscriberName,
-}
-
 #[derive(Debug)]
 pub struct SubscriberName(String);
 
@@ -35,7 +30,7 @@ mod test {
     use assertor::*;
     use rstest::rstest;
 
-    use crate::domain::SubscriberName;
+    use super::SubscriberName;
 
     #[test]
     fn a_256_grapheme_long_name_is_valid() {
