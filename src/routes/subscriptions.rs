@@ -28,7 +28,7 @@ pub async fn subscribe(
 ) -> Result<(), StatusCode> {
     let new_subscriber = NewSubscriber {
         email: form.email,
-        name: SubscriberName::parse(form.name).expect("name validation failed."),
+        name: SubscriberName::parse(form.name).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?,
     };
     insert_subscriber(&pool, &new_subscriber)
         .await
