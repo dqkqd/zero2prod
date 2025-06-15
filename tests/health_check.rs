@@ -11,6 +11,7 @@ use uuid::Uuid;
 use zero2prod::{
     app,
     configuration::{DatabaseSettings, get_configuration},
+    email_client::EmailClient,
     telemetry::init_subscriber,
 };
 
@@ -37,8 +38,18 @@ async fn spawn_app() -> TestApp {
         .connect_with(settings.database.with_db())
         .await
         .expect("can't connect to database");
+
+    let sender_email = settings.email_client.sender().unwrap();
+    let timeout = settings.email_client.timeout();
+    let email_client = EmailClient::new(
+        settings.email_client.base_url,
+        sender_email,
+        settings.email_client.authorization_token,
+        timeout,
+    );
+
     TestApp {
-        router: app(pool.clone()),
+        router: app(pool.clone(), email_client),
         pool,
     }
 }

@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use sqlx::postgres::PgPoolOptions;
-use zero2prod::{configuration::get_configuration, run, telemetry::init_subscriber};
+use zero2prod::{
+    configuration::get_configuration, email_client::EmailClient, run, telemetry::init_subscriber,
+};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -22,5 +24,14 @@ async fn main() -> std::io::Result<()> {
         .acquire_timeout(Duration::from_secs(2))
         .connect_lazy_with(configuration.database.with_db());
 
-    run(listener, pool).await
+    let sender_email = configuration.email_client.sender().unwrap();
+    let timeout = configuration.email_client.timeout();
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url,
+        sender_email,
+        configuration.email_client.authorization_token,
+        timeout,
+    );
+
+    run(listener, pool, email_client).await
 }
