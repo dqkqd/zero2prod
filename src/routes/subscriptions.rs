@@ -30,6 +30,7 @@ impl TryFrom<FormData> for NewSubscriber {
         subscriber_email = %form.email,
         subscriber_name = %form.name,
     ),
+    err,
     )
 ]
 pub async fn subscribe(
@@ -47,6 +48,7 @@ pub async fn subscribe(
 #[tracing::instrument(
     name = "Saving new subscriber details in the database",
     skip(new_subscriber, pool)
+    err,
 )]
 pub async fn insert_subscriber(
     pool: &PgPool,
