@@ -2,7 +2,7 @@ use axum::{Form, extract::State, http::StatusCode};
 use chrono::Utc;
 use rand::distr::{Alphanumeric, SampleString};
 use serde::Deserialize;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::{
@@ -46,12 +46,18 @@ pub async fn subscribe(
         .try_into()
         .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
 
-    let subscriber_id = insert_subscriber(&state.db_pool, &new_subscriber)
+    let mut tx = state
+        .db_pool
+        .begin()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let subscriber_id = insert_subscriber(&mut tx, &new_subscriber)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let subscription_token = generate_subscription_token();
-    store_token(&state.db_pool, subscriber_id, &subscription_token)
+    store_token(&mut tx, subscriber_id, &subscription_token)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -64,16 +70,19 @@ pub async fn subscribe(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    tx.commit()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(())
 }
 
 #[tracing::instrument(
     name = "Saving new subscriber details in the database",
-    skip(new_subscriber, pool)
+    skip(new_subscriber, txn)
     err,
 )]
 pub async fn insert_subscriber(
-    pool: &PgPool,
+    txn: &mut PgConnection,
     new_subscriber: &NewSubscriber,
 ) -> Result<Uuid, sqlx::Error> {
     let subscriber_id = Uuid::new_v4();
@@ -87,7 +96,7 @@ pub async fn insert_subscriber(
         new_subscriber.name.as_ref(),
         Utc::now(),
     )
-    .execute(pool)
+    .execute(txn)
     .await
     .map_err(|e| {
         tracing::error!(error = ?e, "failed to execute query");
@@ -99,11 +108,11 @@ pub async fn insert_subscriber(
 
 #[tracing::instrument(
     name = "Store subscription token in the database",
-    skip(subscription_token, pool)
+    skip(subscription_token, txn)
     err,
 )]
 pub async fn store_token(
-    pool: &PgPool,
+    txn: &mut PgConnection,
     subscriber_id: Uuid,
     subscription_token: &str,
 ) -> Result<(), sqlx::Error> {
@@ -115,7 +124,7 @@ pub async fn store_token(
         subscription_token,
         subscriber_id,
     )
-    .execute(pool)
+    .execute(txn)
     .await
     .map_err(|e| {
         tracing::error!(error = ?e, "failed to execute query");
