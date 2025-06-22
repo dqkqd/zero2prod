@@ -12,7 +12,7 @@ use tower_http::trace::TraceLayer;
 use crate::{
     configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
-    routes::{health_check, subscribe},
+    routes::{confirm, health_check, subscribe},
 };
 
 pub struct Application {
@@ -64,6 +64,7 @@ fn router(state: AppState) -> Router {
     Router::new()
         .route("/health_check", get(health_check))
         .route("/subscriptions", post(subscribe))
+        .route("/subscriptions/confirm", get(confirm))
         .with_state(state)
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {

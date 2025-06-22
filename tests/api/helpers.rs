@@ -27,6 +27,20 @@ pub struct TestApp {
 }
 
 impl TestApp {
+    pub async fn get_subscriptions_confirm(&self) -> Response<Body> {
+        self.router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::GET)
+                    .uri("/subscriptions/confirm")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("failed to execute request")
+    }
+
     pub async fn post_subscriptions(&self, body: &'static str) -> Response<Body> {
         self.router
             .clone()
