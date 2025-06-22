@@ -75,6 +75,7 @@
             sqlx-cli
             cargo-udeps
             jq
+            sqruff
 
             # digital ocean
             doctl
