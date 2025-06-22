@@ -1,4 +1,3 @@
-
 use axum::{Form, extract::State, http::StatusCode};
 use chrono::Utc;
 use serde::Deserialize;
@@ -7,6 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     domain::{NewSubscriber, SubscriberEmail, SubscriberName},
+    email_client::EmailClient,
     startup::AppState,
 };
 
@@ -41,21 +41,15 @@ pub async fn subscribe(
     State(state): State<AppState>,
     Form(form): Form<FormData>,
 ) -> Result<(), StatusCode> {
-    let new_subsrciber = form
+    let new_subscriber = form
         .try_into()
         .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
-    insert_subscriber(&state.db_pool, &new_subsrciber)
+
+    insert_subscriber(&state.db_pool, &new_subscriber)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    state
-        .email_client
-        .send_email(
-            new_subsrciber.email,
-            "Welcome!",
-            "Welcome to our newsletter!",
-            "Welcome to our newsletter!",
-        )
+    send_confirmation_email(&state.email_client, new_subscriber)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -88,4 +82,26 @@ pub async fn insert_subscriber(
         e
     })?;
     Ok(())
+}
+
+#[tracing::instrument(
+    name = "Send a confirmation email to a new subscriber",
+    skip(new_subscriber, email_client)
+    err,
+)]
+pub async fn send_confirmation_email(
+    email_client: &EmailClient,
+    new_subscriber: NewSubscriber,
+) -> Result<(), reqwest::Error> {
+    let confirmation_link = "https://my-api.com/subscriptions/confirm";
+    let plain_body = format!(
+        "Welcome to our newsletter!\nVisit {confirmation_link} to confirm your subscription."
+    );
+    let html_body = format!(
+        "Welcome to our newsletter!<br />\
+                Click <a href=\"{confirmation_link}\">here</a> to confirm your subscription.",
+    );
+    email_client
+        .send_email(new_subscriber.email, "Welcome!", &html_body, &plain_body)
+        .await
 }
