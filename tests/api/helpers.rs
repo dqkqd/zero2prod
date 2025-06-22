@@ -1,9 +1,13 @@
+use std::collections::HashMap;
+
 use axum::{
     Router,
     body::Body,
     http::{self, Request, Response},
 };
+use linkify::{Link, LinkFinder, LinkKind};
 use once_cell::sync::Lazy;
+use reqwest::Url;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -26,19 +30,28 @@ pub struct TestApp {
     pub email_server: MockServer,
 }
 
+pub struct ConfirmationLinks {
+    pub html: reqwest::Url,
+    pub plain_text: reqwest::Url,
+}
+
 impl TestApp {
-    pub async fn get_subscriptions_confirm(&self) -> Response<Body> {
+    pub async fn get_one(&self, uri: &str, body: Body) -> Response<Body> {
         self.router
             .clone()
             .oneshot(
                 Request::builder()
                     .method(http::Method::GET)
-                    .uri("/subscriptions/confirm")
-                    .body(Body::empty())
+                    .uri(uri)
+                    .body(body)
                     .unwrap(),
             )
             .await
             .expect("failed to execute request")
+    }
+
+    pub async fn get_subscriptions_confirm(&self) -> Response<Body> {
+        self.get_one("/subscriptions/confirm", Body::empty()).await
     }
 
     pub async fn post_subscriptions(&self, body: &'static str) -> Response<Body> {
@@ -57,6 +70,43 @@ impl TestApp {
             )
             .await
             .expect("failed to execute request")
+    }
+
+    pub fn get_confirmation_links(&self, email_request: &wiremock::Request) -> ConfirmationLinks {
+        let body: HashMap<String, String> = email_request.body_json().unwrap();
+
+        let get_link = |s: &str| {
+            let finder = LinkFinder::new();
+            let link: Vec<Link> = finder
+                .links(s)
+                .filter(|link| link.kind() == &LinkKind::Url)
+                .collect();
+            assert_eq!(link.len(), 1);
+            let link = Url::parse(link[0].as_str()).unwrap();
+
+            //Let's make sure we don't call random API on the Internet
+            assert_eq!(link.host_str().unwrap(), "127.0.0.1");
+
+            link
+        };
+
+        ConfirmationLinks {
+            html: get_link(body["HtmlBody"].as_str()),
+            plain_text: get_link(body["TextBody"].as_str()),
+        }
+    }
+}
+
+impl ConfirmationLinks {
+    pub fn link_without_host(&self) -> String {
+        let mut output = self.html.path().to_string();
+        if let Some(query) = self.html.query() {
+            output = format!("{output}?{query}");
+        }
+        if let Some(fragment) = self.html.fragment() {
+            output = format!("{output}#{fragment}");
+        }
+        output
     }
 }
 

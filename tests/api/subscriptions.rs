@@ -1,7 +1,4 @@
-use std::collections::HashMap;
-
 use axum::http::StatusCode;
-use linkify::{Link, LinkFinder, LinkKind};
 use rstest::rstest;
 use wiremock::{Mock, ResponseTemplate, matchers};
 
@@ -75,21 +72,8 @@ async fn subscribe_sends_a_confirmation_email_with_a_link() {
         .await;
 
     let email_request = &app.email_server.received_requests().await.unwrap()[0];
-    let body: HashMap<String, String> = email_request.body_json().unwrap();
-
-    let get_link = |s: &str| {
-        let finder = LinkFinder::new();
-        let link: Vec<Link> = finder
-            .links(s)
-            .filter(|link| link.kind() == &LinkKind::Url)
-            .collect();
-        assert_eq!(link.len(), 1);
-        link[0].as_str().to_string()
-    };
-
-    let html_link = get_link(body["HtmlBody"].as_str());
-    let text_link = get_link(body["HtmlBody"].as_str());
-    assert_eq!(html_link, text_link);
+    let confirmation_links = app.get_confirmation_links(email_request);
+    assert_eq!(confirmation_links.html, confirmation_links.plain_text);
 }
 
 #[tokio::test]

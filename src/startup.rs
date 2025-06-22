@@ -24,6 +24,7 @@ pub struct Application {
 pub struct AppState {
     pub db_pool: PgPool,
     pub email_client: Arc<EmailClient>,
+    pub base_url: String,
 }
 
 impl Application {
@@ -46,6 +47,7 @@ impl Application {
         let state = AppState {
             db_pool: connection_pool,
             email_client: Arc::new(email_client),
+            base_url: configuration.application.base_url,
         };
         let router = router(state);
 

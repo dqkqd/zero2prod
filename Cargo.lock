@@ -3243,6 +3243,7 @@ dependencies = [
  "once_cell",
  "quickcheck",
  "quickcheck_macros",
+ "rand 0.9.1",
  "reqwest",
  "rstest",
  "secrecy",

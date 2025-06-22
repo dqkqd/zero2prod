@@ -1,5 +1,6 @@
 use axum::{Form, extract::State, http::StatusCode};
 use chrono::Utc;
+use rand::distr::{Alphanumeric, SampleString};
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -45,13 +46,23 @@ pub async fn subscribe(
         .try_into()
         .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
 
-    insert_subscriber(&state.db_pool, &new_subscriber)
+    let subscriber_id = insert_subscriber(&state.db_pool, &new_subscriber)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    send_confirmation_email(&state.email_client, new_subscriber)
+    let subscription_token = generate_subscription_token();
+    store_token(&state.db_pool, subscriber_id, &subscription_token)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    send_confirmation_email(
+        &state.email_client,
+        new_subscriber,
+        &state.base_url,
+        &subscription_token,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(())
 }
@@ -64,13 +75,14 @@ pub async fn subscribe(
 pub async fn insert_subscriber(
     pool: &PgPool,
     new_subscriber: &NewSubscriber,
-) -> Result<(), sqlx::Error> {
+) -> Result<Uuid, sqlx::Error> {
+    let subscriber_id = Uuid::new_v4();
     sqlx::query!(
         r#"
         INSERT INTO subscriptions (id, email, name, subscribed_at, status)
         VALUES ($1, $2, $3, $4, 'pending_confirmation')
         "#,
-        Uuid::new_v4(),
+        subscriber_id,
         new_subscriber.email.as_ref(),
         new_subscriber.name.as_ref(),
         Utc::now(),
@@ -81,6 +93,35 @@ pub async fn insert_subscriber(
         tracing::error!(error = ?e, "failed to execute query");
         e
     })?;
+
+    Ok(subscriber_id)
+}
+
+#[tracing::instrument(
+    name = "Store subscription token in the database",
+    skip(subscription_token, pool)
+    err,
+)]
+pub async fn store_token(
+    pool: &PgPool,
+    subscriber_id: Uuid,
+    subscription_token: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO subscription_tokens (subscription_token, subscriber_id)
+        VALUES ($1, $2)
+        "#,
+        subscription_token,
+        subscriber_id,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = ?e, "failed to execute query");
+        e
+    })?;
+
     Ok(())
 }
 
@@ -92,8 +133,11 @@ pub async fn insert_subscriber(
 pub async fn send_confirmation_email(
     email_client: &EmailClient,
     new_subscriber: NewSubscriber,
+    base_url: &str,
+    subscription_token: &str,
 ) -> Result<(), reqwest::Error> {
-    let confirmation_link = "https://my-api.com/subscriptions/confirm";
+    let confirmation_link =
+        format!("{base_url}/subscriptions/confirm?subscription_token={subscription_token}");
     let plain_body = format!(
         "Welcome to our newsletter!\nVisit {confirmation_link} to confirm your subscription."
     );
@@ -104,4 +148,8 @@ pub async fn send_confirmation_email(
     email_client
         .send_email(new_subscriber.email, "Welcome!", &html_body, &plain_body)
         .await
+}
+
+fn generate_subscription_token() -> String {
+    Alphanumeric.sample_string(&mut rand::rng(), 25)
 }
