@@ -22,14 +22,6 @@ async fn subscribe_return_a_200_for_valid_form_data() {
         .await;
 
     assert_eq!(response.status(), StatusCode::OK);
-
-    let saved = sqlx::query!("SELECT name, email from subscriptions")
-        .fetch_one(&app.pool)
-        .await
-        .expect("failed to fetch saved subscriptions");
-
-    assert_eq!(saved.email, "ursula_le_guin@gmail.com");
-    assert_eq!(saved.name, "le guin");
 }
 
 #[rstest]
@@ -98,4 +90,26 @@ async fn subscribe_sends_a_confirmation_email_with_a_link() {
     let html_link = get_link(body["HtmlBody"].as_str());
     let text_link = get_link(body["HtmlBody"].as_str());
     assert_eq!(html_link, text_link);
+}
+
+#[tokio::test]
+async fn subscriber_persists_the_new_subscriber() {
+    let app = spawn_app().await;
+    Mock::given(matchers::path("/email"))
+        .and(matchers::method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscriptions("name=le%20guin&email=ursula_le_guin%40gmail.com")
+        .await;
+
+    let saved = sqlx::query!("SELECT email, name, status from subscriptions")
+        .fetch_one(&app.pool)
+        .await
+        .expect("failed to fetch saved subscriptions");
+
+    assert_eq!(saved.email, "ursula_le_guin@gmail.com");
+    assert_eq!(saved.name, "le guin");
+    assert_eq!(saved.status, "pending_confirmation");
 }
