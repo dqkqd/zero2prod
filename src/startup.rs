@@ -20,6 +20,12 @@ pub struct Application {
     pub router: Router,
 }
 
+#[derive(Clone)]
+pub struct AppState {
+    pub db_pool: PgPool,
+    pub email_client: Arc<EmailClient>,
+}
+
 impl Application {
     pub fn build(configuration: Settings) -> Application {
         let connection_pool = get_connection_pool(&configuration.database);
@@ -36,7 +42,12 @@ impl Application {
         );
 
         let address = configuration.application.address();
-        let router = router(connection_pool, email_client);
+
+        let state = AppState {
+            db_pool: connection_pool,
+            email_client: Arc::new(email_client),
+        };
+        let router = router(state);
 
         Application { address, router }
     }
@@ -49,12 +60,11 @@ impl Application {
     }
 }
 
-fn router(connection_pool: PgPool, email_client: EmailClient) -> Router {
+fn router(state: AppState) -> Router {
     Router::new()
         .route("/health_check", get(health_check))
         .route("/subscriptions", post(subscribe))
-        .with_state(connection_pool)
-        .with_state(Arc::new(email_client))
+        .with_state(state)
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
                 let span = tracing::info_span!(

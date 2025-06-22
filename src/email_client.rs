@@ -5,6 +5,7 @@ use serde::Serialize;
 
 use crate::domain::SubscriberEmail;
 
+#[derive(Debug)]
 pub struct EmailClient {
     sender: SubscriberEmail,
     base_url: String,
@@ -184,7 +185,7 @@ mod test {
         let email_client = email_client(mock_server.uri());
 
         Mock::given(matchers::any())
-            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_millis(10000)))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_millis(1000)))
             .expect(1)
             .mount(&mock_server)
             .await;
