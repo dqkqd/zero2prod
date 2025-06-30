@@ -70,7 +70,7 @@ fn router(state: AppState) -> Router {
         .with_state(state)
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
-                let span = tracing::info_span!(
+                let span = tracing::debug_span!(
                     "request",
                     method=?request.method(),
                     uri=?request.uri(),
