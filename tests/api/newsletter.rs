@@ -5,7 +5,7 @@ use axum::{
 use tower::ServiceExt;
 use wiremock::{Mock, ResponseTemplate, matchers};
 
-use crate::helpers::{TestApp, spawn_app};
+use crate::helpers::{ConfirmationLinks, TestApp, spawn_app};
 
 #[tokio::test]
 async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
@@ -45,7 +45,45 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
     assert_eq!(response.status().as_u16(), 200);
 }
 
-async fn create_unconfirmed_subscriber(app: &TestApp) {
+#[tokio::test]
+async fn newsletters_are_delivered_to_confirmed_subscribers() {
+    let app = spawn_app().await;
+    create_confirmed_subscriber(&app).await;
+
+    Mock::given(matchers::any())
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    let newsletter_request_body = Body::from(
+        serde_json::to_string(&serde_json::json!({
+            "title": "Newsletter title",
+            "content": {
+                "text": "Newsletter body as plain text",
+                "html": "<p>Newsletter body as HTML</p>",
+            }
+        }))
+        .unwrap(),
+    );
+
+    let request = Request::builder()
+        .method(http::Method::POST)
+        .uri("/newsletters")
+        .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+        .body(newsletter_request_body)
+        .unwrap();
+
+    let response = app
+        .router
+        .oneshot(request)
+        .await
+        .expect("failed to execute request");
+
+    assert_eq!(response.status().as_u16(), 200);
+}
+
+async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
     let _mock_guard = Mock::given(matchers::path("/email"))
         .and(matchers::method("POST"))
         .respond_with(ResponseTemplate::new(200))
@@ -55,5 +93,20 @@ async fn create_unconfirmed_subscriber(app: &TestApp) {
         .await;
 
     app.post_subscriptions("name=le%20guin&email=ursula_le_guin%40gmail.com")
+        .await;
+
+    let email_request = &app
+        .email_server
+        .received_requests()
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    app.get_confirmation_links(email_request)
+}
+
+async fn create_confirmed_subscriber(app: &TestApp) {
+    let confirmation_links = create_unconfirmed_subscriber(app).await;
+    app.get_one(&confirmation_links.link_without_host(), Body::empty())
         .await;
 }
