@@ -1,3 +1,4 @@
+use anyhow::Context;
 use axum::{
     Form,
     extract::State,
@@ -53,12 +54,20 @@ pub async fn subscribe(
         .db_pool
         .begin()
         .await
-        .map_err(SubscribeError::PoolError)?;
+        .context("Failed to acquire a Postgres connection from the pool.")?;
 
-    let subscriber_id = insert_subscriber(&mut tx, &new_subscriber).await?;
+    let subscriber_id = insert_subscriber(&mut tx, &new_subscriber)
+        .await
+        .context("Failed to insert new subscriber in the database.")?;
 
     let subscription_token = generate_subscription_token();
-    store_token(&mut tx, subscriber_id, &subscription_token).await?;
+    store_token(&mut tx, subscriber_id, &subscription_token)
+        .await
+        .context("Failed to store the confirmation token for a new subscriber.")?;
+
+    tx.commit()
+        .await
+        .context("Failed to commit SQL transaction to store a new subscriber.")?;
 
     send_confirmation_email(
         &state.email_client,
@@ -66,11 +75,9 @@ pub async fn subscribe(
         &state.base_url,
         &subscription_token,
     )
-    .await?;
+    .await
+    .context("Failed to send a confirmation email")?;
 
-    tx.commit()
-        .await
-        .map_err(SubscribeError::TransactionCommitError)?;
     Ok(())
 }
 
@@ -81,7 +88,7 @@ pub async fn subscribe(
 pub async fn insert_subscriber(
     txn: &mut PgConnection,
     new_subscriber: &NewSubscriber,
-) -> Result<Uuid, SubscribeError> {
+) -> Result<Uuid, sqlx::Error> {
     let subscriber_id = Uuid::new_v4();
     sqlx::query!(
         r#"
@@ -94,8 +101,7 @@ pub async fn insert_subscriber(
         Utc::now(),
     )
     .execute(txn)
-    .await
-    .map_err(SubscribeError::InsertSubscriberError)?;
+    .await?;
 
     Ok(subscriber_id)
 }
@@ -108,7 +114,7 @@ pub async fn store_token(
     txn: &mut PgConnection,
     subscriber_id: Uuid,
     subscription_token: &str,
-) -> Result<(), SubscribeError> {
+) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
         INSERT INTO subscription_tokens (subscription_token, subscriber_id)
@@ -118,8 +124,7 @@ pub async fn store_token(
         subscriber_id,
     )
     .execute(txn)
-    .await
-    .map_err(SubscribeError::StoreTokenError)?;
+    .await?;
 
     Ok(())
 }
@@ -133,7 +138,7 @@ pub async fn send_confirmation_email(
     new_subscriber: NewSubscriber,
     base_url: &str,
     subscription_token: &str,
-) -> Result<(), SubscribeError> {
+) -> Result<(), reqwest::Error> {
     let confirmation_link =
         format!("{base_url}/subscriptions/confirm?subscription_token={subscription_token}");
     let plain_body = format!(
@@ -146,6 +151,7 @@ pub async fn send_confirmation_email(
     email_client
         .send_email(new_subscriber.email, "Welcome!", &html_body, &plain_body)
         .await?;
+
     Ok(())
 }
 
@@ -157,27 +163,15 @@ fn generate_subscription_token() -> String {
 pub enum SubscribeError {
     #[error("{0}")]
     ValidiationError(String),
-    #[error("Failed to acquire a Postgres connection from the pool.")]
-    PoolError(#[source] sqlx::Error),
-    #[error("Failed to insert new subscriber in the database.")]
-    InsertSubscriberError(#[source] sqlx::Error),
-    #[error("Failed to store the confirmation token for a new subscriber.")]
-    StoreTokenError(#[source] sqlx::Error),
-    #[error("Failed to cmmit SQL transaction to store a new subscriber.")]
-    TransactionCommitError(#[source] sqlx::Error),
-    #[error("Failed to send a confirmation email.")]
-    SendEmailError(#[from] reqwest::Error),
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 impl SubscribeError {
     fn status(&self) -> StatusCode {
         match self {
             SubscribeError::ValidiationError(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            SubscribeError::PoolError(_)
-            | SubscribeError::InsertSubscriberError(_)
-            | SubscribeError::StoreTokenError(_)
-            | SubscribeError::TransactionCommitError(_)
-            | SubscribeError::SendEmailError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            SubscribeError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
