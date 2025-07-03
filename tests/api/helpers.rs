@@ -72,6 +72,21 @@ impl TestApp {
             .expect("failed to execute request")
     }
 
+    pub async fn post_newsletters(&self, body: serde_json::Value) -> Response<Body> {
+        self.router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::POST)
+                    .uri("/newsletters")
+                    .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+                    .body(Body::from(serde_json::to_string(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .expect("failed to execute request")
+    }
+
     pub fn get_confirmation_links(&self, email_request: &wiremock::Request) -> ConfirmationLinks {
         let body: HashMap<String, String> = email_request.body_json().unwrap();
 

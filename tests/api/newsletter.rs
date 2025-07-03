@@ -1,8 +1,5 @@
-use axum::{
-    body::Body,
-    http::{self, Request},
-};
-use tower::ServiceExt;
+use axum::{body::Body, http::StatusCode};
+use rstest::rstest;
 use wiremock::{Mock, ResponseTemplate, matchers};
 
 use crate::helpers::{ConfirmationLinks, TestApp, spawn_app};
@@ -18,29 +15,15 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
         .mount(&app.email_server)
         .await;
 
-    let newsletter_request_body = Body::from(
-        serde_json::to_string(&serde_json::json!({
+    let response = app
+        .post_newsletters(serde_json::json!({
             "title": "Newsletter title",
             "content": {
                 "text": "Newsletter body as plain text",
                 "html": "<p>Newsletter body as HTML</p>",
             }
         }))
-        .unwrap(),
-    );
-
-    let request = Request::builder()
-        .method(http::Method::POST)
-        .uri("/newsletters")
-        .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(newsletter_request_body)
-        .unwrap();
-
-    let response = app
-        .router
-        .oneshot(request)
-        .await
-        .expect("failed to execute request");
+        .await;
 
     assert_eq!(response.status().as_u16(), 200);
 }
@@ -56,31 +39,34 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
         .mount(&app.email_server)
         .await;
 
-    let newsletter_request_body = Body::from(
-        serde_json::to_string(&serde_json::json!({
+    let response = app
+        .post_newsletters(serde_json::json!({
             "title": "Newsletter title",
             "content": {
                 "text": "Newsletter body as plain text",
                 "html": "<p>Newsletter body as HTML</p>",
             }
         }))
-        .unwrap(),
-    );
-
-    let request = Request::builder()
-        .method(http::Method::POST)
-        .uri("/newsletters")
-        .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-        .body(newsletter_request_body)
-        .unwrap();
-
-    let response = app
-        .router
-        .oneshot(request)
-        .await
-        .expect("failed to execute request");
+        .await;
 
     assert_eq!(response.status().as_u16(), 200);
+}
+
+#[rstest]
+#[case::missing_title(serde_json::json!({
+    "content": {
+        "text": "Newsletter body as plain text",
+        "html": "<p>Newsletter body as HTML</p>",
+    }
+}))]
+#[case::missing_content(serde_json::json!({
+    "title": "Newsletter!"
+}))]
+#[tokio::test]
+async fn newsletter_return_400_for_invalid_data(#[case] invalid_body: serde_json::Value) {
+    let app = spawn_app().await;
+    let response = app.post_newsletters(invalid_body).await;
+    assert_eq!(response.status().as_u16(), StatusCode::UNPROCESSABLE_ENTITY,);
 }
 
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
