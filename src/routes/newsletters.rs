@@ -11,6 +11,7 @@ use axum_extra::{
     headers::{Authorization, authorization::Basic},
 };
 use reqwest::StatusCode;
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -34,7 +35,7 @@ pub struct Content {
     name = "Publish newsletter",
     skip(state, authorization, body),
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
-    )]
+)]
 pub async fn publish_newsletter(
     State(state): State<AppState>,
     authorization: Option<TypedHeader<Authorization<Basic>>>,
@@ -112,17 +113,39 @@ async fn get_confirmed_subscribers(
     Ok(confirmed_subscribers)
 }
 
+#[tracing::instrument(name = "Validate credentials", skip(authorization, pool))]
 async fn validate_credentials(
     authorization: Authorization<Basic>,
     pool: &PgPool,
 ) -> Result<Uuid, PublishError> {
+    let (user_id, password_hash) = get_stored_credentials(authorization.username(), pool).await?;
+    let expected_password_hash = PasswordHash::new(password_hash.expose_secret())
+        .context("Failed to parse hash in PHC string format.")
+        .map_err(PublishError::UnexpectedError)?;
+
+    tracing::info_span!("Verify password hash")
+        .in_scope(|| {
+            Argon2::default()
+                .verify_password(authorization.password().as_bytes(), &expected_password_hash)
+        })
+        .context("Invalid password")
+        .map_err(PublishError::AuthError)?;
+
+    Ok(user_id)
+}
+
+#[tracing::instrument(name = "Get stored credentials", skip(pool, username))]
+async fn get_stored_credentials(
+    username: &str,
+    pool: &PgPool,
+) -> Result<(Uuid, SecretString), PublishError> {
     let row = sqlx::query!(
         r#"
     SELECT user_id, password_hash
     FROM users
     WHERE username = $1;
         "#,
-        authorization.username(),
+        username,
     )
     .fetch_optional(pool)
     .await
@@ -131,16 +154,7 @@ async fn validate_credentials(
     .context("Unknown username")
     .map_err(PublishError::AuthError)?;
 
-    let password_hash = PasswordHash::new(&row.password_hash)
-        .context("Failed to parse hash in PHC string format.")
-        .map_err(PublishError::UnexpectedError)?;
-
-    Argon2::default()
-        .verify_password(authorization.password().as_bytes(), &password_hash)
-        .context("Invalid password")
-        .map_err(PublishError::AuthError)?;
-
-    Ok(row.user_id)
+    Ok((row.user_id, row.password_hash.into()))
 }
 
 #[derive(thiserror::Error, Debug)]
