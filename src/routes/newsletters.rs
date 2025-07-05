@@ -12,6 +12,7 @@ use axum_extra::{
 use reqwest::StatusCode;
 use serde::Deserialize;
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::{domain::SubscriberEmail, startup::AppState};
 
@@ -28,15 +29,25 @@ pub struct Content {
 }
 
 #[axum::debug_handler]
-#[tracing::instrument(name = "Publish newsletter", skip(state))]
+#[tracing::instrument(
+    name = "Publish newsletter",
+    skip(state, authorization, body),
+    fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
+    )]
 pub async fn publish_newsletter(
     State(state): State<AppState>,
     authorization: Option<TypedHeader<Authorization<Basic>>>,
     body: Json<BodyData>,
 ) -> Result<(), PublishError> {
-    let _authorization = authorization
+    let authorization = authorization
         .context("Missing authorization header")
         .map_err(PublishError::AuthError)?;
+    tracing::Span::current().record(
+        "username",
+        tracing::field::display(authorization.username()),
+    );
+    let user_id = validate_credentials(authorization.0, &state.db_pool).await?;
+    tracing::Span::current().record("user_id", tracing::field::display(&user_id));
 
     let subscribers = get_confirmed_subscribers(&state.db_pool)
         .await
@@ -98,6 +109,28 @@ async fn get_confirmed_subscribers(
         .collect();
 
     Ok(confirmed_subscribers)
+}
+
+async fn validate_credentials(
+    authorization: Authorization<Basic>,
+    pool: &PgPool,
+) -> Result<Uuid, PublishError> {
+    let user_id = sqlx::query!(
+        r#"
+    SELECT user_id FROM users WHERE username = $1 AND password = $2;
+        "#,
+        authorization.username(),
+        authorization.password(),
+    )
+    .fetch_optional(pool)
+    .await
+    .context("Failed to perform a query to validate auth credentials.")
+    .map_err(PublishError::UnexpectedError)?;
+
+    user_id
+        .map(|r| r.user_id)
+        .context("Invalid username or password.")
+        .map_err(PublishError::AuthError)
 }
 
 #[derive(thiserror::Error, Debug)]

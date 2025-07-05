@@ -38,6 +38,33 @@ pub struct ConfirmationLinks {
 }
 
 impl TestApp {
+    async fn add_test_user(&self) {
+        sqlx::query!(
+            r#"
+        INSERT INTO users (user_id, username, password)
+        VALUES ($1, $2, $3)
+            "#,
+            Uuid::new_v4(),
+            Uuid::new_v4().to_string(),
+            Uuid::new_v4().to_string(),
+        )
+        .execute(&self.pool)
+        .await
+        .expect("Failed to create test user");
+    }
+
+    pub async fn test_user(&self) -> (String, String) {
+        let row = sqlx::query!(
+            r#"
+        SELECT username, password FROM users
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .expect("Failed to create test user");
+        (row.username, row.password)
+    }
+
     pub async fn get_one(&self, uri: &str, body: Body) -> Response<Body> {
         self.router
             .clone()
@@ -85,9 +112,9 @@ impl TestApp {
             .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref());
 
         let request = if include_auth {
+            let (username, password) = self.test_user().await;
             let mut header_values = Vec::<HeaderValue>::new();
-            let auth =
-                Authorization::basic(&Uuid::new_v4().to_string(), &Uuid::new_v4().to_string());
+            let auth = Authorization::basic(&username, &password);
             auth.encode(&mut header_values);
             let auth_value = header_values.pop().unwrap();
             request.header(http::header::AUTHORIZATION, auth_value)
@@ -162,11 +189,13 @@ pub async fn spawn_app() -> TestApp {
 
     let application = Application::build(configuration.clone());
 
-    TestApp {
+    let app = TestApp {
         router: application.router,
         pool: get_connection_pool(&configuration.database),
         email_server,
-    }
+    };
+    app.add_test_user().await;
+    app
 }
 
 async fn configure_database(configuration: &DatabaseSettings) {
