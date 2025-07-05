@@ -2,7 +2,12 @@ use anyhow::Context;
 use axum::{
     Json,
     extract::State,
+    http::{HeaderValue, header},
     response::{IntoResponse, Response},
+};
+use axum_extra::{
+    TypedHeader,
+    headers::{Authorization, authorization::Basic},
 };
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -26,8 +31,13 @@ pub struct Content {
 #[tracing::instrument(name = "Publish newsletter", skip(state))]
 pub async fn publish_newsletter(
     State(state): State<AppState>,
+    authorization: Option<TypedHeader<Authorization<Basic>>>,
     body: Json<BodyData>,
 ) -> Result<(), PublishError> {
+    let _authorization = authorization
+        .context("Missing authorization header")
+        .map_err(PublishError::AuthError)?;
+
     let subscribers = get_confirmed_subscribers(&state.db_pool)
         .await
         .context("failed to get confirmed subscribers.")?;
@@ -60,13 +70,13 @@ pub async fn publish_newsletter(
             }
         }
     }
+
     Ok(())
 }
 
 pub struct ConfirmedSubscriber {
     email: SubscriberEmail,
 }
-
 #[tracing::instrument(name = "Get confirmed subscribers", skip(pool))]
 async fn get_confirmed_subscribers(
     pool: &PgPool,
@@ -92,6 +102,8 @@ async fn get_confirmed_subscribers(
 
 #[derive(thiserror::Error, Debug)]
 pub enum PublishError {
+    #[error("Authentication failed.")]
+    AuthError(#[source] anyhow::Error),
     #[error(transparent)]
     UnexpectedError(#[from] anyhow::Error),
 }
@@ -99,6 +111,7 @@ pub enum PublishError {
 impl PublishError {
     fn status(&self) -> StatusCode {
         match self {
+            PublishError::AuthError(_) => StatusCode::UNAUTHORIZED,
             PublishError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -106,6 +119,16 @@ impl PublishError {
 
 impl IntoResponse for PublishError {
     fn into_response(self) -> Response {
-        (self.status(), self.to_string()).into_response()
+        match self {
+            PublishError::AuthError(_) => {
+                let mut response = self.status().into_response();
+                response.headers_mut().insert(
+                    header::WWW_AUTHENTICATE,
+                    HeaderValue::from_static(r#"Basic realm="publish""#),
+                );
+                response
+            }
+            _ => (self.status(), self.to_string()).into_response(),
+        }
     }
 }

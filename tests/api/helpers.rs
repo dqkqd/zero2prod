@@ -3,8 +3,10 @@ use std::collections::HashMap;
 use axum::{
     Router,
     body::Body,
-    http::{self, Request, Response},
+    http::{self, HeaderValue, Request, Response},
 };
+use axum_extra::headers::Authorization;
+use axum_extra::headers::Header;
 use linkify::{Link, LinkFinder, LinkKind};
 use once_cell::sync::Lazy;
 use reqwest::Url;
@@ -72,14 +74,31 @@ impl TestApp {
             .expect("failed to execute request")
     }
 
-    pub async fn post_newsletters(&self, body: serde_json::Value) -> Response<Body> {
+    pub async fn post_newsletters(
+        &self,
+        body: serde_json::Value,
+        include_auth: bool,
+    ) -> Response<Body> {
+        let request = Request::builder()
+            .method(http::Method::POST)
+            .uri("/newsletters")
+            .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref());
+
+        let request = if include_auth {
+            let mut header_values = Vec::<HeaderValue>::new();
+            let auth =
+                Authorization::basic(&Uuid::new_v4().to_string(), &Uuid::new_v4().to_string());
+            auth.encode(&mut header_values);
+            let auth_value = header_values.pop().unwrap();
+            request.header(http::header::AUTHORIZATION, auth_value)
+        } else {
+            request
+        };
+
         self.router
             .clone()
             .oneshot(
-                Request::builder()
-                    .method(http::Method::POST)
-                    .uri("/newsletters")
-                    .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+                request
                     .body(Body::from(serde_json::to_string(&body).unwrap()))
                     .unwrap(),
             )

@@ -16,13 +16,16 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
         .await;
 
     let response = app
-        .post_newsletters(serde_json::json!({
-            "title": "Newsletter title",
-            "content": {
-                "text": "Newsletter body as plain text",
-                "html": "<p>Newsletter body as HTML</p>",
-            }
-        }))
+        .post_newsletters(
+            serde_json::json!({
+                "title": "Newsletter title",
+                "content": {
+                    "text": "Newsletter body as plain text",
+                    "html": "<p>Newsletter body as HTML</p>",
+                }
+            }),
+            true,
+        )
         .await;
 
     assert_eq!(response.status().as_u16(), 200);
@@ -40,13 +43,16 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
         .await;
 
     let response = app
-        .post_newsletters(serde_json::json!({
-            "title": "Newsletter title",
-            "content": {
-                "text": "Newsletter body as plain text",
-                "html": "<p>Newsletter body as HTML</p>",
-            }
-        }))
+        .post_newsletters(
+            serde_json::json!({
+                "title": "Newsletter title",
+                "content": {
+                    "text": "Newsletter body as plain text",
+                    "html": "<p>Newsletter body as HTML</p>",
+                }
+            }),
+            true,
+        )
         .await;
 
     assert_eq!(response.status().as_u16(), 200);
@@ -65,7 +71,7 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
 #[tokio::test]
 async fn newsletter_return_400_for_invalid_data(#[case] invalid_body: serde_json::Value) {
     let app = spawn_app().await;
-    let response = app.post_newsletters(invalid_body).await;
+    let response = app.post_newsletters(invalid_body, true).await;
     assert_eq!(response.status().as_u16(), StatusCode::UNPROCESSABLE_ENTITY,);
 }
 
@@ -95,4 +101,28 @@ async fn create_confirmed_subscriber(app: &TestApp) {
     let confirmation_links = create_unconfirmed_subscriber(app).await;
     app.get_one(&confirmation_links.link_without_host(), Body::empty())
         .await;
+}
+
+#[tokio::test]
+async fn requests_missing_authorization_are_rejected() {
+    let app = spawn_app().await;
+
+    let response = app
+        .post_newsletters(
+            serde_json::json!({
+                "title": "Newsletter title",
+                "content": {
+                    "text": "Newsletter body as plain text",
+                    "html": "<p>Newsletter body as HTML</p>",
+                }
+            }),
+            false,
+        )
+        .await;
+
+    assert_eq!(response.status().as_u16(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.headers()["WWW-Authenticate"],
+        r#"Basic realm="publish""#
+    )
 }
