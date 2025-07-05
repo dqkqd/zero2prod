@@ -60,13 +60,12 @@ impl TestUser {
 
         sqlx::query!(
             r#"
-        INSERT INTO users (user_id, username, password_hash, salt)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO users (user_id, username, password_hash)
+        VALUES ($1, $2, $3)
             "#,
             self.user_id,
             self.username,
             password_hash,
-            salt.to_string(),
         )
         .execute(pool)
         .await

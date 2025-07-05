@@ -1,5 +1,5 @@
 use anyhow::Context;
-use argon2::{Argon2, Params, PasswordHash, PasswordVerifier};
+use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use axum::{
     Json,
     extract::State,
@@ -116,17 +116,9 @@ async fn validate_credentials(
     authorization: Authorization<Basic>,
     pool: &PgPool,
 ) -> Result<Uuid, PublishError> {
-    let hasher = Argon2::new(
-        argon2::Algorithm::Argon2id,
-        argon2::Version::V0x13,
-        Params::new(15000, 2, 1, None)
-            .context("Failed to build Argon2 parameters.")
-            .map_err(PublishError::UnexpectedError)?,
-    );
-
     let row = sqlx::query!(
         r#"
-    SELECT user_id, password_hash, salt
+    SELECT user_id, password_hash
     FROM users
     WHERE username = $1;
         "#,
@@ -140,10 +132,10 @@ async fn validate_credentials(
     .map_err(PublishError::AuthError)?;
 
     let password_hash = PasswordHash::new(&row.password_hash)
-        .context("Invalid password hash for old user")
+        .context("Failed to parse hash in PHC string format.")
         .map_err(PublishError::UnexpectedError)?;
 
-    hasher
+    Argon2::default()
         .verify_password(authorization.password().as_bytes(), &password_hash)
         .context("Invalid password")
         .map_err(PublishError::AuthError)?;
