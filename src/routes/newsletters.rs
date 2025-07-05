@@ -1,4 +1,5 @@
 use anyhow::Context;
+use argon2::{Argon2, Params, PasswordHash, PasswordVerifier};
 use axum::{
     Json,
     extract::State,
@@ -11,7 +12,6 @@ use axum_extra::{
 };
 use reqwest::StatusCode;
 use serde::Deserialize;
-use sha3::Digest;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -116,25 +116,39 @@ async fn validate_credentials(
     authorization: Authorization<Basic>,
     pool: &PgPool,
 ) -> Result<Uuid, PublishError> {
-    let password_hash = sha3::Sha3_256::digest(authorization.password().as_bytes());
-    let password_hash = format!("{password_hash:x}");
+    let hasher = Argon2::new(
+        argon2::Algorithm::Argon2id,
+        argon2::Version::V0x13,
+        Params::new(15000, 2, 1, None)
+            .context("Failed to build Argon2 parameters.")
+            .map_err(PublishError::UnexpectedError)?,
+    );
 
-    let user_id = sqlx::query!(
+    let row = sqlx::query!(
         r#"
-    SELECT user_id FROM users WHERE username = $1 AND password_hash = $2;
+    SELECT user_id, password_hash, salt
+    FROM users
+    WHERE username = $1;
         "#,
         authorization.username(),
-        password_hash,
     )
     .fetch_optional(pool)
     .await
     .context("Failed to perform a query to validate auth credentials.")
-    .map_err(PublishError::UnexpectedError)?;
+    .map_err(PublishError::UnexpectedError)?
+    .context("Unknown username")
+    .map_err(PublishError::AuthError)?;
 
-    user_id
-        .map(|r| r.user_id)
-        .context("Invalid username or password.")
-        .map_err(PublishError::AuthError)
+    let password_hash = PasswordHash::new(&row.password_hash)
+        .context("Invalid password hash for old user")
+        .map_err(PublishError::UnexpectedError)?;
+
+    hasher
+        .verify_password(authorization.password().as_bytes(), &password_hash)
+        .context("Invalid password")
+        .map_err(PublishError::AuthError)?;
+
+    Ok(row.user_id)
 }
 
 #[derive(thiserror::Error, Debug)]

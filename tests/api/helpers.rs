@@ -1,5 +1,9 @@
 use std::collections::HashMap;
 
+use argon2::{
+    Argon2,
+    password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
+};
 use axum::{
     Router,
     body::Body,
@@ -10,7 +14,6 @@ use axum_extra::headers::Header;
 use linkify::{Link, LinkFinder, LinkKind};
 use once_cell::sync::Lazy;
 use reqwest::Url;
-use sha3::Digest;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -43,16 +46,27 @@ impl TestUser {
     }
 
     async fn store(&self, pool: &PgPool) {
-        let password_hash = sha3::Sha3_256::digest(self.password.as_bytes());
-        let password_hash = format!("{password_hash:x}");
+        let argon2 = Argon2::new(
+            argon2::Algorithm::Argon2id,
+            argon2::Version::V0x13,
+            argon2::Params::new(15000, 2, 1, None).expect("Failed to build Argon2 parameters."),
+        );
+
+        let salt = SaltString::generate(&mut OsRng);
+        let password_hash = argon2
+            .hash_password(self.password.as_bytes(), &salt)
+            .expect("Failed to hash password")
+            .to_string();
+
         sqlx::query!(
             r#"
-        INSERT INTO users (user_id, username, password_hash)
-        VALUES ($1, $2, $3)
+        INSERT INTO users (user_id, username, password_hash, salt)
+        VALUES ($1, $2, $3, $4)
             "#,
             self.user_id,
             self.username,
             password_hash,
+            salt.to_string(),
         )
         .execute(pool)
         .await
