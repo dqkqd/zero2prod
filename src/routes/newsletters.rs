@@ -11,6 +11,7 @@ use axum_extra::{
 };
 use reqwest::StatusCode;
 use serde::Deserialize;
+use sha3::Digest;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -115,12 +116,15 @@ async fn validate_credentials(
     authorization: Authorization<Basic>,
     pool: &PgPool,
 ) -> Result<Uuid, PublishError> {
+    let password_hash = sha3::Sha3_256::digest(authorization.password().as_bytes());
+    let password_hash = format!("{password_hash:x}");
+
     let user_id = sqlx::query!(
         r#"
-    SELECT user_id FROM users WHERE username = $1 AND password = $2;
+    SELECT user_id FROM users WHERE username = $1 AND password_hash = $2;
         "#,
         authorization.username(),
-        authorization.password(),
+        password_hash,
     )
     .fetch_optional(pool)
     .await

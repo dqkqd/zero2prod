@@ -10,6 +10,7 @@ use axum_extra::headers::Header;
 use linkify::{Link, LinkFinder, LinkKind};
 use once_cell::sync::Lazy;
 use reqwest::Url;
+use sha3::Digest;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -26,10 +27,44 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     }
 });
 
+pub struct TestUser {
+    pub user_id: Uuid,
+    pub username: String,
+    pub password: String,
+}
+
+impl TestUser {
+    pub fn generate() -> TestUser {
+        TestUser {
+            user_id: Uuid::new_v4(),
+            username: Uuid::new_v4().to_string(),
+            password: Uuid::new_v4().to_string(),
+        }
+    }
+
+    async fn store(&self, pool: &PgPool) {
+        let password_hash = sha3::Sha3_256::digest(self.password.as_bytes());
+        let password_hash = format!("{password_hash:x}");
+        sqlx::query!(
+            r#"
+        INSERT INTO users (user_id, username, password_hash)
+        VALUES ($1, $2, $3)
+            "#,
+            self.user_id,
+            self.username,
+            password_hash,
+        )
+        .execute(pool)
+        .await
+        .expect("Failed to create test user");
+    }
+}
+
 pub struct TestApp {
     pub router: Router,
     pub pool: PgPool,
     pub email_server: MockServer,
+    pub test_user: TestUser,
 }
 
 pub struct ConfirmationLinks {
@@ -38,33 +73,6 @@ pub struct ConfirmationLinks {
 }
 
 impl TestApp {
-    async fn add_test_user(&self) {
-        sqlx::query!(
-            r#"
-        INSERT INTO users (user_id, username, password)
-        VALUES ($1, $2, $3)
-            "#,
-            Uuid::new_v4(),
-            Uuid::new_v4().to_string(),
-            Uuid::new_v4().to_string(),
-        )
-        .execute(&self.pool)
-        .await
-        .expect("Failed to create test user");
-    }
-
-    pub async fn test_user(&self) -> (String, String) {
-        let row = sqlx::query!(
-            r#"
-        SELECT username, password FROM users
-            "#,
-        )
-        .fetch_one(&self.pool)
-        .await
-        .expect("Failed to create test user");
-        (row.username, row.password)
-    }
-
     pub async fn get_one(&self, uri: &str, body: Body) -> Response<Body> {
         self.router
             .clone()
@@ -112,9 +120,8 @@ impl TestApp {
             .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref());
 
         let request = if include_auth {
-            let (username, password) = self.test_user().await;
             let mut header_values = Vec::<HeaderValue>::new();
-            let auth = Authorization::basic(&username, &password);
+            let auth = Authorization::basic(&self.test_user.username, &self.test_user.password);
             auth.encode(&mut header_values);
             let auth_value = header_values.pop().unwrap();
             request.header(http::header::AUTHORIZATION, auth_value)
@@ -193,8 +200,9 @@ pub async fn spawn_app() -> TestApp {
         router: application.router,
         pool: get_connection_pool(&configuration.database),
         email_server,
+        test_user: TestUser::generate(),
     };
-    app.add_test_user().await;
+    app.test_user.store(&app.pool).await;
     app
 }
 
