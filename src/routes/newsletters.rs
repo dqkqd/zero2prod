@@ -16,7 +16,7 @@ use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{domain::SubscriberEmail, startup::AppState};
+use crate::{domain::SubscriberEmail, startup::AppState, telemetry::spawn_blocking_with_tracing};
 
 #[derive(Deserialize, Debug)]
 pub struct BodyData {
@@ -120,10 +120,8 @@ async fn validate_credentials(
 ) -> Result<Uuid, PublishError> {
     let (user_id, password_hash) = get_stored_credentials(authorization.username(), pool).await?;
 
-    let current_span = tracing::Span::current();
-    tokio::task::spawn_blocking(move || {
-        current_span
-            .in_scope(|| verify_password_hash(authorization.password().to_string(), password_hash))
+    spawn_blocking_with_tracing(move || {
+        verify_password_hash(authorization.password().to_string(), password_hash)
     })
     .await
     .context("Failed to spawn blocking task.")
