@@ -118,7 +118,17 @@ async fn validate_credentials(
     authorization: Authorization<Basic>,
     pool: &PgPool,
 ) -> Result<Uuid, PublishError> {
-    let (user_id, password_hash) = get_stored_credentials(authorization.username(), pool).await?;
+    let (user_id, password_hash) =
+        match get_stored_credentials(authorization.username(), pool).await? {
+            Some((user_id, password_hash)) => (Some(user_id), password_hash),
+            None => (
+                None,
+                "$argon2id$v=19$m=15000,t=2,p=1$\
+                gySEVMmPuRVG7WfKGI3kkA$\
+                jLtcZMQ/KWaNuM2q7nYYcGan0wijjF7hCAYa56V28Ts"
+                    .into(),
+            ),
+        };
 
     spawn_blocking_with_tracing(move || {
         verify_password_hash(authorization.password().to_string(), password_hash)
@@ -127,14 +137,16 @@ async fn validate_credentials(
     .context("Failed to spawn blocking task.")
     .map_err(PublishError::UnexpectedError)??;
 
-    Ok(user_id)
+    user_id
+        .ok_or_else(|| anyhow::anyhow!("Unknown username"))
+        .map_err(PublishError::AuthError)
 }
 
 #[tracing::instrument(name = "Get stored credentials", skip(pool, username))]
 async fn get_stored_credentials(
     username: &str,
     pool: &PgPool,
-) -> Result<(Uuid, SecretString), PublishError> {
+) -> Result<Option<(Uuid, SecretString)>, PublishError> {
     let row = sqlx::query!(
         r#"
     SELECT user_id, password_hash
@@ -146,11 +158,9 @@ async fn get_stored_credentials(
     .fetch_optional(pool)
     .await
     .context("Failed to perform a query to validate auth credentials.")
-    .map_err(PublishError::UnexpectedError)?
-    .context("Unknown username")
-    .map_err(PublishError::AuthError)?;
+    .map_err(PublishError::UnexpectedError)?;
 
-    Ok((row.user_id, row.password_hash.into()))
+    Ok(row.map(|r| (r.user_id, r.password_hash.into())))
 }
 
 #[tracing::instrument(name = "Verify password hash", skip(password, expected_password_hash))]

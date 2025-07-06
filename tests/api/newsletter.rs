@@ -1,5 +1,6 @@
 use axum::{body::Body, http::StatusCode};
 use rstest::rstest;
+use uuid::Uuid;
 use wiremock::{Mock, ResponseTemplate, matchers};
 
 use crate::helpers::{ConfirmationLinks, TestApp, TestUser, spawn_app};
@@ -143,6 +144,33 @@ async fn non_existing_user_is_rejected() {
                 }
             }),
             Some(&TestUser::generate()),
+        )
+        .await;
+
+    assert_eq!(response.status().as_u16(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.headers()["WWW-Authenticate"],
+        r#"Basic realm="publish""#
+    )
+}
+
+#[tokio::test]
+async fn invalid_password_is_rejected() {
+    let app = spawn_app().await;
+    let mut user = app.test_user.clone();
+    user.password = Uuid::new_v4().to_string();
+    assert_ne!(app.test_user.password, user.password);
+
+    let response = app
+        .post_newsletters(
+            serde_json::json!({
+                "title": "Newsletter title",
+                "content": {
+                    "text": "Newsletter body as plain text",
+                    "html": "<p>Newsletter body as HTML</p>",
+                }
+            }),
+            Some(&user),
         )
         .await;
 
