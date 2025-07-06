@@ -2,6 +2,7 @@ use axum::{
     extract::Query,
     response::{Html, IntoResponse},
 };
+use htmlescape::encode_minimal;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
@@ -11,7 +12,7 @@ pub struct QueryParams {
 
 pub async fn login_form(Query(query): Query<QueryParams>) -> impl IntoResponse {
     let error_html = match query.error {
-        Some(error) => format!("<p><i>{error}</i></p>"),
+        Some(error) => format!("<p><i>{}</i></p>", encode_minimal(&error)),
         None => "".to_string(),
     };
     Html(format!(
