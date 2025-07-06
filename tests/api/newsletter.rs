@@ -2,7 +2,7 @@ use axum::{body::Body, http::StatusCode};
 use rstest::rstest;
 use wiremock::{Mock, ResponseTemplate, matchers};
 
-use crate::helpers::{ConfirmationLinks, TestApp, spawn_app};
+use crate::helpers::{ConfirmationLinks, TestApp, TestUser, spawn_app};
 
 #[tokio::test]
 async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
@@ -24,7 +24,7 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
                     "html": "<p>Newsletter body as HTML</p>",
                 }
             }),
-            true,
+            Some(&app.test_user),
         )
         .await;
 
@@ -51,7 +51,7 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
                     "html": "<p>Newsletter body as HTML</p>",
                 }
             }),
-            true,
+            Some(&app.test_user),
         )
         .await;
 
@@ -71,7 +71,9 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
 #[tokio::test]
 async fn newsletter_return_400_for_invalid_data(#[case] invalid_body: serde_json::Value) {
     let app = spawn_app().await;
-    let response = app.post_newsletters(invalid_body, true).await;
+    let response = app
+        .post_newsletters(invalid_body, Some(&app.test_user))
+        .await;
     assert_eq!(response.status().as_u16(), StatusCode::UNPROCESSABLE_ENTITY,);
 }
 
@@ -116,7 +118,31 @@ async fn requests_missing_authorization_are_rejected() {
                     "html": "<p>Newsletter body as HTML</p>",
                 }
             }),
-            false,
+            None,
+        )
+        .await;
+
+    assert_eq!(response.status().as_u16(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.headers()["WWW-Authenticate"],
+        r#"Basic realm="publish""#
+    )
+}
+
+#[tokio::test]
+async fn non_existing_user_is_rejected() {
+    let app = spawn_app().await;
+
+    let response = app
+        .post_newsletters(
+            serde_json::json!({
+                "title": "Newsletter title",
+                "content": {
+                    "text": "Newsletter body as plain text",
+                    "html": "<p>Newsletter body as HTML</p>",
+                }
+            }),
+            Some(&TestUser::generate()),
         )
         .await;
 

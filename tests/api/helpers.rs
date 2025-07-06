@@ -7,7 +7,7 @@ use argon2::{
 use axum::{
     Router,
     body::Body,
-    http::{self, HeaderValue, Request, Response},
+    http::{self, HeaderName, HeaderValue, Request, Response},
 };
 use axum_extra::headers::Authorization;
 use axum_extra::headers::Header;
@@ -30,6 +30,7 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     }
 });
 
+#[derive(Clone)]
 pub struct TestUser {
     pub user_id: Uuid,
     pub username: String,
@@ -43,6 +44,14 @@ impl TestUser {
             username: Uuid::new_v4().to_string(),
             password: Uuid::new_v4().to_string(),
         }
+    }
+
+    pub fn auth_header(&self) -> (HeaderName, HeaderValue) {
+        let mut header_values = Vec::<HeaderValue>::new();
+        let auth = Authorization::basic(&self.username, &self.password);
+        auth.encode(&mut header_values);
+        let auth_value = header_values.pop().unwrap();
+        (http::header::AUTHORIZATION, auth_value)
     }
 
     async fn store(&self, pool: &PgPool) {
@@ -125,21 +134,19 @@ impl TestApp {
     pub async fn post_newsletters(
         &self,
         body: serde_json::Value,
-        include_auth: bool,
+        basic_auth: Option<&TestUser>,
     ) -> Response<Body> {
         let request = Request::builder()
             .method(http::Method::POST)
             .uri("/newsletters")
             .header(http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref());
 
-        let request = if include_auth {
-            let mut header_values = Vec::<HeaderValue>::new();
-            let auth = Authorization::basic(&self.test_user.username, &self.test_user.password);
-            auth.encode(&mut header_values);
-            let auth_value = header_values.pop().unwrap();
-            request.header(http::header::AUTHORIZATION, auth_value)
-        } else {
-            request
+        let request = match basic_auth {
+            Some(user) => {
+                let (auth_header, auth_value) = user.auth_header();
+                request.header(auth_header, auth_value)
+            }
+            None => request,
         };
 
         self.router
