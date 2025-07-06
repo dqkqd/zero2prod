@@ -6,6 +6,7 @@ use axum::{
     http::Request,
     routing::{get, post},
 };
+use secrecy::SecretString;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower_http::trace::TraceLayer;
 
@@ -25,6 +26,7 @@ pub struct AppState {
     pub db_pool: PgPool,
     pub email_client: Arc<EmailClient>,
     pub base_url: String,
+    pub hmac_secret: SecretString,
 }
 
 impl Application {
@@ -48,6 +50,7 @@ impl Application {
             db_pool: connection_pool,
             email_client: Arc::new(email_client),
             base_url: configuration.application.base_url,
+            hmac_secret: configuration.application.hmac_secret,
         };
         let router = router(state);
 
