@@ -1,22 +1,22 @@
 use anyhow::Context;
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use axum::{
     Json,
     extract::State,
-    http::{HeaderValue, header},
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use axum_extra::{
     TypedHeader,
     headers::{Authorization, authorization::Basic},
 };
-use reqwest::StatusCode;
-use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use sqlx::PgPool;
-use uuid::Uuid;
 
-use crate::{domain::SubscriberEmail, startup::AppState, telemetry::spawn_blocking_with_tracing};
+use crate::{
+    authentication::{AuthError, Credentials, validate_credentials},
+    domain::SubscriberEmail,
+    startup::AppState,
+};
 
 #[derive(Deserialize, Debug)]
 pub struct BodyData {
@@ -44,11 +44,18 @@ pub async fn publish_newsletter(
     let authorization = authorization
         .context("Missing authorization header")
         .map_err(PublishError::AuthError)?;
-    tracing::Span::current().record(
-        "username",
-        tracing::field::display(authorization.username()),
-    );
-    let user_id = validate_credentials(authorization.0, &state.db_pool).await?;
+    let credentials = Credentials {
+        username: authorization.username().to_string(),
+        password: authorization.password().into(),
+    };
+
+    tracing::Span::current().record("username", tracing::field::display(&credentials.username));
+    let user_id = validate_credentials(credentials, &state.db_pool)
+        .await
+        .map_err(|e| match e {
+            AuthError::InvalidCredentials(error) => PublishError::AuthError(error),
+            AuthError::UnexpectedError(error) => PublishError::UnexpectedError(error),
+        })?;
     tracing::Span::current().record("user_id", tracing::field::display(&user_id));
 
     let subscribers = get_confirmed_subscribers(&state.db_pool)
@@ -111,73 +118,6 @@ async fn get_confirmed_subscribers(
         .collect();
 
     Ok(confirmed_subscribers)
-}
-
-#[tracing::instrument(name = "Validate credentials", skip(authorization, pool))]
-async fn validate_credentials(
-    authorization: Authorization<Basic>,
-    pool: &PgPool,
-) -> Result<Uuid, PublishError> {
-    let (user_id, password_hash) =
-        match get_stored_credentials(authorization.username(), pool).await? {
-            Some((user_id, password_hash)) => (Some(user_id), password_hash),
-            None => (
-                None,
-                "$argon2id$v=19$m=15000,t=2,p=1$\
-                gySEVMmPuRVG7WfKGI3kkA$\
-                jLtcZMQ/KWaNuM2q7nYYcGan0wijjF7hCAYa56V28Ts"
-                    .into(),
-            ),
-        };
-
-    spawn_blocking_with_tracing(move || {
-        verify_password_hash(authorization.password().to_string(), password_hash)
-    })
-    .await
-    .context("Failed to spawn blocking task.")
-    .map_err(PublishError::UnexpectedError)??;
-
-    user_id
-        .ok_or_else(|| anyhow::anyhow!("Unknown username"))
-        .map_err(PublishError::AuthError)
-}
-
-#[tracing::instrument(name = "Get stored credentials", skip(pool, username))]
-async fn get_stored_credentials(
-    username: &str,
-    pool: &PgPool,
-) -> Result<Option<(Uuid, SecretString)>, PublishError> {
-    let row = sqlx::query!(
-        r#"
-    SELECT user_id, password_hash
-    FROM users
-    WHERE username = $1;
-        "#,
-        username,
-    )
-    .fetch_optional(pool)
-    .await
-    .context("Failed to perform a query to validate auth credentials.")
-    .map_err(PublishError::UnexpectedError)?;
-
-    Ok(row.map(|r| (r.user_id, r.password_hash.into())))
-}
-
-#[tracing::instrument(name = "Verify password hash", skip(password, expected_password_hash))]
-fn verify_password_hash(
-    password: String,
-    expected_password_hash: SecretString,
-) -> Result<(), PublishError> {
-    let expected_password_hash = PasswordHash::new(expected_password_hash.expose_secret())
-        .context("Failed to parse hash in PHC string format.")
-        .map_err(PublishError::UnexpectedError)?;
-
-    Argon2::default()
-        .verify_password(password.as_bytes(), &expected_password_hash)
-        .context("Invalid password")
-        .map_err(PublishError::AuthError)?;
-
-    Ok(())
 }
 
 #[derive(thiserror::Error, Debug)]
