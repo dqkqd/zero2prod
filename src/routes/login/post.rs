@@ -3,7 +3,7 @@ use axum::{
     extract::State,
     response::{IntoResponse, Redirect},
 };
-use axum_extra::extract::{CookieJar, cookie::Cookie};
+use axum_messages::Messages;
 use secrecy::SecretString;
 use serde::Deserialize;
 
@@ -21,12 +21,12 @@ pub struct FormData {
 #[axum::debug_handler]
 #[tracing::instrument(
     name = "Login",
-    skip(state, form),
+    skip(state, form, messages),
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
 )]
 pub async fn login(
     State(state): State<AppState>,
-    jar: CookieJar,
+    messages: Messages,
     Form(form): Form<FormData>,
 ) -> impl IntoResponse {
     let credentials = Credentials {
@@ -50,11 +50,8 @@ pub async fn login(
                 error.cause_chain = ?e,
                 "Failed to login"
             );
-            (
-                jar.add(Cookie::new("_flash", e.to_string())),
-                Redirect::to("/login"),
-            )
-                .into_response()
+            messages.error(e.to_string());
+            Redirect::to("/login").into_response()
         }
     }
 }

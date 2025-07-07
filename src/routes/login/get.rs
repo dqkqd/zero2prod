@@ -1,16 +1,17 @@
 use axum::response::{Html, IntoResponse};
-use axum_extra::extract::CookieJar;
+use axum_messages::{Level, Messages};
 
 #[axum::debug_handler]
-pub async fn login_form(jar: CookieJar) -> impl IntoResponse {
-    let error_html = match jar.get("_flash") {
-        Some(cookie) => format!("<p><i>{}</i></p>", cookie.value()),
-        None => "".into(),
-    };
-    (
-        jar.remove("_flash"),
-        Html(format!(
-            r#"
+pub async fn login_form(messages: Messages) -> impl IntoResponse {
+    let error_html = messages
+        .into_iter()
+        .filter(|m| m.level == Level::Error)
+        .map(|m| format!("<p><i>{}</i></p>", m.message))
+        .collect::<Vec<_>>()
+        .join("");
+
+    Html(format!(
+        r#"
 <!doctype html>
 <html lang="en">
   <head>
@@ -34,6 +35,5 @@ pub async fn login_form(jar: CookieJar) -> impl IntoResponse {
   </body>
 </html>
             "#
-        )),
-    )
+    ))
 }

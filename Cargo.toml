@@ -8,6 +8,7 @@ anyhow = "1.0.98"
 argon2 = { version = "0.5.3", features = ["std"] }
 axum = { version = "0.8.4", features = ["macros"] }
 axum-extra = { version = "0.10.1", features = ["cookie", "typed-header"] }
+axum-messages = "0.8.0"
 chrono = "0.4.41"
 config = "0.15.11"
 htmlescape = "0.3.1"
@@ -23,6 +24,7 @@ serde-aux = "4.7.0"
 thiserror = "2.0.12"
 tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread"] }
 tower-http = { version = "0.6.4", features = ["trace"] }
+tower-sessions = { version = "0.14.0", features = ["signed"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
 unicode-segmentation = "1.12.0"

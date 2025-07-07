@@ -6,10 +6,12 @@ use axum::{
     http::Request,
     routing::{get, post},
 };
-use secrecy::SecretString;
+use axum_messages::MessagesManagerLayer;
+use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
+use tower_sessions::{MemoryStore, SessionManagerLayer, cookie::Key};
 
 use crate::{
     configuration::{DatabaseSettings, Settings},
@@ -66,6 +68,11 @@ impl Application {
 }
 
 fn router(state: AppState) -> Router {
+    let session_store = MemoryStore::default();
+    let session_layer = SessionManagerLayer::new(session_store)
+        .with_secure(false)
+        .with_signed(Key::from(state.hmac_secret.expose_secret().as_bytes()));
+
     Router::new()
         .route("/health_check", get(health_check))
         .route("/subscriptions", post(subscribe))
@@ -75,6 +82,8 @@ fn router(state: AppState) -> Router {
         .route("/login", get(login_form))
         .route("/login", post(login))
         .with_state(state)
+        .layer(MessagesManagerLayer)
+        .layer(session_layer)
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
                 let span = tracing::debug_span!(
