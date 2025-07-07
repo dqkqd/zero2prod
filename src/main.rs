@@ -10,6 +10,7 @@ async fn main() -> std::io::Result<()> {
     ));
     let configuration = get_configuration().expect("failed to read configuration");
     let application = Application::build(configuration);
-    application.run_until_stopped().await?;
+    let listener = tokio::net::TcpListener::bind(&application.address).await?;
+    application.run_until_stopped(listener).await?;
     Ok(())
 }

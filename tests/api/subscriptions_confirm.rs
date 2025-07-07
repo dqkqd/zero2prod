@@ -1,4 +1,4 @@
-use axum::body::Body;
+use reqwest::StatusCode;
 use wiremock::{Mock, ResponseTemplate, matchers};
 
 use crate::helpers::spawn_app;
@@ -6,8 +6,14 @@ use crate::helpers::spawn_app;
 #[tokio::test]
 async fn confirmations_without_token_are_rejected_with_a_400() {
     let app = spawn_app().await;
-    let response = app.get_subscriptions_confirm().await;
-    assert_eq!(response.status().as_u16(), 400)
+
+    let response = app
+        .client
+        .get(format!("{}/subscriptions/confirm", app.address()))
+        .send()
+        .await
+        .expect("failed to execute request");
+    assert_eq!(response.status().as_u16(), StatusCode::BAD_REQUEST)
 }
 
 #[tokio::test]
@@ -15,7 +21,7 @@ async fn the_link_returned_by_subscribe_returns_a_200_if_called() {
     let app = spawn_app().await;
     Mock::given(matchers::path("/email"))
         .and(matchers::method("POST"))
-        .respond_with(ResponseTemplate::new(200))
+        .respond_with(ResponseTemplate::new(StatusCode::OK))
         .mount(&app.email_server)
         .await;
 
@@ -26,10 +32,12 @@ async fn the_link_returned_by_subscribe_returns_a_200_if_called() {
     let confirmation_links = app.get_confirmation_links(email_request);
 
     let response = app
-        .get_one(&confirmation_links.link_without_host(), Body::empty())
-        .await;
-
-    assert_eq!(response.status().as_u16(), 200)
+        .client
+        .get(confirmation_links.html)
+        .send()
+        .await
+        .expect("failed to execute request");
+    assert_eq!(response.status().as_u16(), StatusCode::OK)
 }
 
 #[tokio::test]
@@ -37,7 +45,7 @@ async fn clicking_on_the_confirmation_link_confirms_a_subscriber() {
     let app = spawn_app().await;
     Mock::given(matchers::path("/email"))
         .and(matchers::method("POST"))
-        .respond_with(ResponseTemplate::new(200))
+        .respond_with(ResponseTemplate::new(StatusCode::OK))
         .mount(&app.email_server)
         .await;
 
@@ -47,8 +55,11 @@ async fn clicking_on_the_confirmation_link_confirms_a_subscriber() {
     let email_request = &app.email_server.received_requests().await.unwrap()[0];
     let confirmation_links = app.get_confirmation_links(email_request);
 
-    app.get_one(&confirmation_links.link_without_host(), Body::empty())
-        .await;
+    app.client
+        .get(confirmation_links.html)
+        .send()
+        .await
+        .expect("failed to execute request");
 
     let saved = sqlx::query!("SELECT email, name, status from subscriptions")
         .fetch_one(&app.pool)

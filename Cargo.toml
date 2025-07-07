@@ -7,21 +7,19 @@ edition = "2024"
 anyhow = "1.0.98"
 argon2 = { version = "0.5.3", features = ["std"] }
 axum = { version = "0.8.4", features = ["macros"] }
-axum-extra = { version = "0.10.1", features = ["typed-header"] }
+axum-extra = { version = "0.10.1", features = ["cookie", "typed-header"] }
 chrono = "0.4.41"
 config = "0.15.11"
-hex = "0.4.3"
-hmac = { version = "0.12.1", features = ["std"] }
 htmlescape = "0.3.1"
 rand = { version = "0.9.1", features = ["std_rng"] }
 reqwest = { version = "0.12.20", default-features = false, features = [
+  "cookies",
   "json",
   "rustls-tls",
 ] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde-aux = "4.7.0"
-sha2 = "0.10.9"
 thiserror = "2.0.12"
 tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread"] }
 tower-http = { version = "0.6.4", features = ["trace"] }

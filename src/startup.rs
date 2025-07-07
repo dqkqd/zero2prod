@@ -8,6 +8,7 @@ use axum::{
 };
 use secrecy::SecretString;
 use sqlx::{PgPool, postgres::PgPoolOptions};
+use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 
 use crate::{
@@ -57,8 +58,7 @@ impl Application {
         Application { address, router }
     }
 
-    pub async fn run_until_stopped(self) -> std::io::Result<()> {
-        let listener = tokio::net::TcpListener::bind(self.address).await?;
+    pub async fn run_until_stopped(self, listener: TcpListener) -> std::io::Result<()> {
         tracing::info!("listening on {}", listener.local_addr().unwrap());
         axum::serve(listener, self.router).await?;
         Ok(())
