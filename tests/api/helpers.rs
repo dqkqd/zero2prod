@@ -84,6 +84,17 @@ impl TestApp {
             .unwrap()
     }
 
+    pub async fn get_admin_dashboard(&self) -> String {
+        self.client
+            .get(format!("{}/admin/dashboard", self.address()))
+            .send()
+            .await
+            .expect("failed to execute request")
+            .text()
+            .await
+            .unwrap()
+    }
+
     pub fn get_confirmation_links(&self, email_request: &wiremock::Request) -> ConfirmationLinks {
         let body: HashMap<String, String> = email_request.body_json().unwrap();
 
