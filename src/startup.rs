@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use anyhow::Context;
 use axum::{
     Router,
     body::Body,
@@ -11,7 +12,11 @@ use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
-use tower_sessions::{MemoryStore, SessionManagerLayer, cookie::Key};
+use tower_sessions::{SessionManagerLayer, cookie::Key};
+use tower_sessions_redis_store::{
+    RedisStore,
+    fred::{self, prelude::ClientLike},
+};
 
 use crate::{
     configuration::{DatabaseSettings, Settings},
@@ -33,12 +38,13 @@ pub struct AppState {
 }
 
 impl Application {
-    pub fn build(configuration: Settings) -> Application {
+    pub async fn build(configuration: Settings) -> Result<Application, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
         let sender_email = configuration
             .email_client
             .sender()
-            .expect("invalid sender email address");
+            .map_err(|_| anyhow::anyhow!("invalid sender email address"))?;
+
         let timeout = configuration.email_client.timeout();
         let email_client = EmailClient::new(
             configuration.email_client.base_url,
@@ -55,9 +61,17 @@ impl Application {
             base_url: configuration.application.base_url,
             hmac_secret: configuration.application.hmac_secret,
         };
-        let router = router(state);
 
-        Application { address, router }
+        let redis_pool = get_redis_connection_pool(&configuration.redis_uri)
+            .context("failed to create redis pool")?;
+        redis_pool
+            .init()
+            .await
+            .context("failed to connect to redis")?;
+
+        let router = router(state, redis_pool);
+
+        Ok(Application { address, router })
     }
 
     pub async fn run_until_stopped(self, listener: TcpListener) -> std::io::Result<()> {
@@ -67,8 +81,8 @@ impl Application {
     }
 }
 
-fn router(state: AppState) -> Router {
-    let session_store = MemoryStore::default();
+fn router(state: AppState, redis_pool: fred::prelude::Pool) -> Router {
+    let session_store = RedisStore::new(redis_pool);
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(false)
         .with_signed(Key::from(state.hmac_secret.expose_secret().as_bytes()));
@@ -106,4 +120,21 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(2))
         .connect_lazy_with(configuration.with_db())
+}
+
+pub fn get_redis_connection_pool(
+    redis_uri: &SecretString,
+) -> Result<fred::prelude::Pool, anyhow::Error> {
+    // https://github.com/aembke/fred.rs/blob/main/examples/axum.rs
+    let config = fred::prelude::Config::from_url(redis_uri.expose_secret())?;
+    let pool = fred::prelude::Builder::from_config(config)
+        .with_connection_config(|config| {
+            config.connection_timeout = Duration::from_secs(10);
+        })
+        // use exponential backoff, starting at 100 ms and doubling on each failed attempt up to 30 sec
+        .set_policy(fred::prelude::ReconnectPolicy::new_exponential(
+            0, 100, 30_000, 2,
+        ))
+        .build_pool(8)?;
+    Ok(pool)
 }
