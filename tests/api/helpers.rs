@@ -132,7 +132,10 @@ pub async fn spawn_app() -> TestApp {
         c
     };
 
-    let application = Application::build(configuration.clone());
+    let application = Application::build(configuration.clone())
+        .await
+        .expect("failed to build application");
+
     tokio::spawn(async move {
         application
             .run_until_stopped(listener)
