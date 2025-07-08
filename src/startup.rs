@@ -21,7 +21,10 @@ use tower_sessions_redis_store::{
 use crate::{
     configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
-    routes::{confirm, health_check, home, login, login_form, publish_newsletter, subscribe},
+    routes::{
+        admin_dashboard, confirm, health_check, home, login, login_form, publish_newsletter,
+        subscribe,
+    },
 };
 
 pub struct Application {
@@ -95,6 +98,7 @@ fn router(state: AppState, redis_pool: fred::prelude::Pool) -> Router {
         .route("/", get(home))
         .route("/login", get(login_form))
         .route("/login", post(login))
+        .route("/admin/dashboard", get(admin_dashboard))
         .with_state(state)
         .layer(MessagesManagerLayer)
         .layer(session_layer)
