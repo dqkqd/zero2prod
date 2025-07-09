@@ -1,21 +1,21 @@
 use anyhow::Context;
 use axum::{
     extract::State,
+    http::StatusCode,
     response::{Html, IntoResponse},
 };
-use reqwest::StatusCode;
 use sqlx::PgPool;
-use tower_sessions::Session;
 use uuid::Uuid;
 
-use crate::startup::AppState;
+use crate::{session_state::TypedSession, startup::AppState};
 
+#[axum::debug_handler]
 pub async fn admin_dashboard(
     State(state): State<AppState>,
-    session: Session,
+    session: TypedSession,
 ) -> Result<impl IntoResponse, DashboardError> {
     let username = if let Some(user_id) = session
-        .get::<Uuid>("user_id")
+        .get_user_id()
         .await
         .context("cannot get user id from session storage")?
     {
