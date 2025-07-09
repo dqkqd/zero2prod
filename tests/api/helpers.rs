@@ -84,15 +84,15 @@ impl TestApp {
             .unwrap()
     }
 
-    pub async fn get_admin_dashboard(&self) -> String {
+    pub async fn get_admin_dashboard(&self) -> reqwest::Response {
         self.client
             .get(format!("{}/admin/dashboard", self.address()))
             .send()
             .await
             .expect("failed to execute request")
-            .text()
-            .await
-            .unwrap()
+    }
+    pub async fn get_admin_dashboard_html(&self) -> String {
+        self.get_admin_dashboard().await.text().await.unwrap()
     }
 
     pub fn get_confirmation_links(&self, email_request: &wiremock::Request) -> ConfirmationLinks {
