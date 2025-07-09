@@ -2,7 +2,7 @@ use anyhow::Context;
 use axum::{
     extract::State,
     http::StatusCode,
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Redirect},
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -21,7 +21,7 @@ pub async fn admin_dashboard(
     {
         get_username(user_id, &state.db_pool).await?
     } else {
-        todo!()
+        return Ok(Redirect::to("/login").into_response());
     };
 
     Ok(Html(format!(
@@ -37,7 +37,8 @@ pub async fn admin_dashboard(
   </body>
 </html>
 "#
-    )))
+    ))
+    .into_response())
 }
 
 #[tracing::instrument(name = "Get username", skip(pool))]
