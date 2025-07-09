@@ -1,15 +1,11 @@
-use axum::{
-    Form,
-    extract::State,
-    response::Redirect,
-};
+use axum::{Form, extract::State, response::Redirect};
 use axum_messages::Messages;
 use secrecy::SecretString;
 use serde::Deserialize;
-use tower_sessions::Session;
 
 use crate::{
     authentication::{AuthError, Credentials, validate_credentials},
+    session_state::TypedSession,
     startup::AppState,
 };
 
@@ -28,7 +24,7 @@ pub struct FormData {
 pub async fn login(
     State(state): State<AppState>,
     messages: Messages,
-    session: Session,
+    session: TypedSession,
     Form(form): Form<FormData>,
 ) -> Redirect {
     let credentials = Credentials {
@@ -41,10 +37,10 @@ pub async fn login(
         Ok(user_id) => {
             tracing::Span::current().record("user_id", tracing::field::display(&user_id));
 
-            if let Err(e) = session.cycle_id().await {
+            if let Err(e) = session.renew().await {
                 return login_redirect(LoginError::UnexpectedError(e.into()), messages);
             }
-            if let Err(e) = session.insert("user_id", user_id).await {
+            if let Err(e) = session.insert_user_id(user_id).await {
                 return login_redirect(LoginError::UnexpectedError(e.into()), messages);
             }
             Redirect::to("/admin/dashboard")
