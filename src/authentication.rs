@@ -1,5 +1,8 @@
 use anyhow::Context;
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use argon2::{
+    Argon2, PasswordHash, PasswordVerifier,
+    password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
+};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -9,6 +12,14 @@ use crate::telemetry::spawn_blocking_with_tracing;
 pub struct Credentials {
     pub username: String,
     pub password: SecretString,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum AuthError {
+    #[error("Invalid credentials")]
+    InvalidCredentials(#[source] anyhow::Error),
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 #[tracing::instrument(name = "Validate credentials", skip(credentials, pool))]
@@ -76,10 +87,40 @@ fn verify_password_hash(
     Ok(())
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum AuthError {
-    #[error("Invalid credentials")]
-    InvalidCredentials(#[source] anyhow::Error),
-    #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error),
+#[tracing::instrument(name = "Change password", skip(password, pool))]
+pub async fn change_password(
+    user_id: Uuid,
+    password: SecretString,
+    pool: &PgPool,
+) -> Result<(), AuthError> {
+    let password_hash = compute_password_hash(password).map_err(AuthError::UnexpectedError)?;
+    sqlx::query!(
+        r#"
+        UPDATE users
+        SET password_hash = $2
+        WHERE user_id = $1
+            "#,
+        user_id,
+        password_hash.expose_secret(),
+    )
+    .execute(pool)
+    .await
+    .context("Failed to update  user")
+    .map_err(AuthError::UnexpectedError)?;
+
+    Ok(())
+}
+
+pub fn compute_password_hash(password: SecretString) -> Result<SecretString, anyhow::Error> {
+    let salt = SaltString::generate(&mut OsRng);
+    let password_hash = Argon2::new(
+        argon2::Algorithm::Argon2id,
+        argon2::Version::V0x13,
+        argon2::Params::new(15000, 2, 1, None).context("Failed to build Argon2 parameters.")?,
+    )
+    .hash_password(password.expose_secret().as_bytes(), &salt)
+    .context("Failed to hash password")?
+    .to_string();
+
+    Ok(password_hash.into())
 }

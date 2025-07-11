@@ -23,7 +23,7 @@ use crate::{
     email_client::EmailClient,
     routes::{
         admin_dashboard, change_password, change_password_form, confirm, health_check, home, login,
-        login_form, publish_newsletter, subscribe,
+        login_form, logout, publish_newsletter, subscribe,
     },
 };
 
@@ -101,6 +101,7 @@ fn router(state: AppState, redis_pool: fred::prelude::Pool) -> Router {
         .route("/admin/dashboard", get(admin_dashboard))
         .route("/admin/password", get(change_password_form))
         .route("/admin/password", post(change_password))
+        .route("/admin/logout", post(logout))
         .with_state(state)
         .layer(MessagesManagerLayer)
         .layer(session_layer)

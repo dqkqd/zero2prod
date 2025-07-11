@@ -1,14 +1,14 @@
-use anyhow::Context;
 use axum::{Form, extract::State, response::Redirect};
 use axum_messages::Messages;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
 use crate::{
-    authentication::{Credentials, validate_credentials},
-    routes::{ChangePasswordError, admin::dashboard::get_username},
+    authentication::{self, Credentials, validate_credentials},
+    routes::admin::dashboard::get_username,
     session_state::TypedSession,
     startup::AppState,
+    utils::E500,
 };
 
 #[derive(Deserialize, Debug)]
@@ -24,31 +24,20 @@ pub async fn change_password(
     messages: Messages,
     session: TypedSession,
     Form(form): Form<FormData>,
-) -> Result<Redirect, ChangePasswordError> {
-    let user_id = match session
-        .get_user_id()
-        .await
-        .context("cannot get user id from session storage")
-        .map_err(ChangePasswordError::UnexpectedError)?
-    {
+) -> Result<Redirect, E500> {
+    let user_id = match session.get_user_id().await? {
         Some(user_id) => user_id,
         None => return Ok(Redirect::to("/login")),
     };
 
     if form.new_password.expose_secret() != form.new_password_check.expose_secret() {
         return Ok(change_password_redirect(
-            ChangePasswordError::PasswordError(
-                "You entered two different new passwords - the field values must match.".into(),
-            ),
+            "You entered two different new passwords - the field values must match.",
             messages,
         ));
     }
 
-    let username = get_username(user_id, &state.db_pool)
-        .await
-        .context("cannot get password for user id")
-        .map_err(ChangePasswordError::UnexpectedError)?;
-
+    let username = get_username(user_id, &state.db_pool).await?;
     let credentials = Credentials {
         username,
         password: form.current_password,
@@ -58,37 +47,32 @@ pub async fn change_password(
         .is_err()
     {
         return Ok(change_password_redirect(
-            ChangePasswordError::PasswordError("The current password is incorrect.".into()),
+            "The current password is incorrect.",
             messages,
         ));
     }
 
-    if let Err(e) = validate_password_security(form.new_password) {
+    if let Err(e) = validate_password_security(&form.new_password) {
         return Ok(change_password_redirect(e, messages));
     }
-    todo!()
+
+    authentication::change_password(user_id, form.new_password, &state.db_pool).await?;
+    messages.info("Your password has been changed.");
+    Ok(Redirect::to("/admin/password"))
 }
 
-fn change_password_redirect(e: ChangePasswordError, messages: Messages) -> Redirect {
-    tracing::error!(
-        error.message = %e,
-        error.cause_chain = ?e,
-        "Failed to change password"
-    );
-    messages.error(e.to_string());
+fn change_password_redirect(e: &'static str, messages: Messages) -> Redirect {
+    tracing::error!(error.message = %e, "Failed to change password");
+    messages.error(e);
     Redirect::to("/admin/password")
 }
 
-fn validate_password_security(password: SecretString) -> Result<(), ChangePasswordError> {
+fn validate_password_security(password: &SecretString) -> Result<(), &'static str> {
     if password.expose_secret().len() < 12 {
-        return Err(ChangePasswordError::PasswordError(
-            "New password must be at least 12 characters.".into(),
-        ));
+        return Err("New password must be at least 12 characters.");
     }
     if password.expose_secret().len() >= 128 {
-        return Err(ChangePasswordError::PasswordError(
-            "New password must be less than 128 characters.".into(),
-        ));
+        return Err("New password must be less than 128 characters.");
     }
     Ok(())
 }

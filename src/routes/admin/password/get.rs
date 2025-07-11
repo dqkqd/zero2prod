@@ -1,30 +1,21 @@
-use anyhow::Context;
 use axum::response::{Html, IntoResponse, Redirect};
-use axum_messages::{Level, Messages};
+use axum_messages::Messages;
 
-use crate::{routes::ChangePasswordError, session_state::TypedSession};
+use crate::{
+    session_state::TypedSession,
+    utils::{E500, get_all_messages},
+};
 
 #[axum::debug_handler]
 pub async fn change_password_form(
     messages: Messages,
     session: TypedSession,
-) -> Result<impl IntoResponse, ChangePasswordError> {
-    if session
-        .get_user_id()
-        .await
-        .context("cannot get user id from session storage")
-        .map_err(ChangePasswordError::UnexpectedError)?
-        .is_none()
-    {
+) -> Result<impl IntoResponse, E500> {
+    if session.get_user_id().await?.is_none() {
         return Ok(Redirect::to("/login").into_response());
     };
 
-    let error_html = messages
-        .into_iter()
-        .filter(|m| m.level == Level::Error)
-        .map(|m| format!("<p><i>{}</i></p>", m.message))
-        .collect::<Vec<_>>()
-        .join("");
+    let message = get_all_messages(messages);
 
     Ok(Html(format!(
         r#"
@@ -35,7 +26,7 @@ pub async fn change_password_form(
     <title>Change password</title>
   </head>
   <body>
-    {error_html}
+    {message}
     <form action="/admin/password" method="post">
       <label
         >Current password

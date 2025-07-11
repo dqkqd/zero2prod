@@ -1,15 +1,11 @@
 use axum::response::{Html, IntoResponse};
-use axum_messages::{Level, Messages};
+use axum_messages::Messages;
+
+use crate::utils::get_all_messages;
 
 #[axum::debug_handler]
 pub async fn login_form(messages: Messages) -> impl IntoResponse {
-    let error_html = messages
-        .into_iter()
-        .filter(|m| m.level == Level::Error)
-        .map(|m| format!("<p><i>{}</i></p>", m.message))
-        .collect::<Vec<_>>()
-        .join("");
-
+    let message = get_all_messages(messages);
     Html(format!(
         r#"
 <!doctype html>
@@ -19,7 +15,7 @@ pub async fn login_form(messages: Messages) -> impl IntoResponse {
     <title>Login</title>
   </head>
   <body>
-    {error_html}
+    {message}
     <form action="/login" method="post">
       <label
         >Username

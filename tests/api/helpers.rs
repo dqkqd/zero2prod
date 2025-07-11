@@ -1,17 +1,15 @@
 use std::collections::HashMap;
 
-use argon2::{
-    Argon2,
-    password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
-};
 use axum::http::{self};
 use linkify::{Link, LinkFinder, LinkKind};
 use once_cell::sync::Lazy;
 use reqwest::{StatusCode, Url};
+use secrecy::ExposeSecret;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use uuid::Uuid;
 use wiremock::MockServer;
 use zero2prod::{
+    authentication,
     configuration::{DatabaseSettings, get_configuration},
     startup::{Application, get_connection_pool},
     telemetry::init_subscriber,
@@ -91,8 +89,17 @@ impl TestApp {
             .await
             .expect("failed to execute request")
     }
+
     pub async fn get_admin_dashboard_html(&self) -> String {
         self.get_admin_dashboard().await.text().await.unwrap()
+    }
+
+    pub async fn post_logout(&self) -> reqwest::Response {
+        self.client
+            .post(format!("{}/admin/logout", self.address()))
+            .send()
+            .await
+            .expect("failed to execute request")
     }
 
     pub fn get_confirmation_links(&self, email_request: &wiremock::Request) -> ConfirmationLinks {
@@ -238,18 +245,8 @@ impl TestUser {
     }
 
     async fn store(&self, pool: &PgPool) {
-        let argon2 = Argon2::new(
-            argon2::Algorithm::Argon2id,
-            argon2::Version::V0x13,
-            argon2::Params::new(15000, 2, 1, None).expect("Failed to build Argon2 parameters."),
-        );
-
-        let salt = SaltString::generate(&mut OsRng);
-        let password_hash = argon2
-            .hash_password(self.password.as_bytes(), &salt)
-            .expect("Failed to hash password")
-            .to_string();
-
+        let password_hash = authentication::compute_password_hash(self.password.clone().into())
+            .expect("Failed to create password hash");
         sqlx::query!(
             r#"
         INSERT INTO users (user_id, username, password_hash)
@@ -257,7 +254,7 @@ impl TestUser {
             "#,
             self.user_id,
             self.username,
-            password_hash,
+            password_hash.expose_secret(),
         )
         .execute(pool)
         .await
