@@ -120,6 +120,27 @@ impl TestApp {
             plain_text: get_link(body["TextBody"].as_str()),
         }
     }
+
+    pub async fn get_change_password(&self) -> reqwest::Response {
+        self.client
+            .get(format!("{}/admin/password", self.address()))
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn get_change_password_html(&self) -> String {
+        self.get_change_password().await.text().await.unwrap()
+    }
+
+    pub async fn post_change_password(&self, body: serde_json::Value) -> reqwest::Response {
+        self.client
+            .post(format!("{}/admin/password", self.address()))
+            .form(&body)
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
 }
 
 pub async fn spawn_app() -> TestApp {

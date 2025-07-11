@@ -34,6 +34,10 @@ pub async fn admin_dashboard(
   </head>
   <body>
     <p> Welcome {username}!</p>
+    <p>Available actions:</p>
+    <ol>
+      <li><a href="/admin/password">Change password</a></li>
+    </ol>
   </body>
 </html>
 "#
@@ -42,7 +46,7 @@ pub async fn admin_dashboard(
 }
 
 #[tracing::instrument(name = "Get username", skip(pool))]
-async fn get_username(user_id: Uuid, pool: &PgPool) -> Result<String, DashboardError> {
+pub async fn get_username(user_id: Uuid, pool: &PgPool) -> Result<String, DashboardError> {
     let row = sqlx::query!(
         r#"
     SELECT username
