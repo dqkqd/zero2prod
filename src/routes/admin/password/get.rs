@@ -1,22 +1,11 @@
-use axum::response::{Html, IntoResponse, Redirect};
+use axum::response::{Html, IntoResponse};
 use axum_messages::Messages;
 
-use crate::{
-    session_state::TypedSession,
-    utils::{E500, get_all_messages},
-};
+use crate::utils::{E500, get_all_messages};
 
 #[axum::debug_handler]
-pub async fn change_password_form(
-    messages: Messages,
-    session: TypedSession,
-) -> Result<impl IntoResponse, E500> {
-    if session.get_user_id().await?.is_none() {
-        return Ok(Redirect::to("/login").into_response());
-    };
-
+pub async fn change_password_form(messages: Messages) -> Result<impl IntoResponse, E500> {
     let message = get_all_messages(messages);
-
     Ok(Html(format!(
         r#"
 <!doctype html>

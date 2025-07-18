@@ -19,6 +19,7 @@ use tower_sessions_redis_store::{
 };
 
 use crate::{
+    authentication::reject_anonymous_users,
     configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
     routes::{
@@ -90,6 +91,16 @@ fn router(state: AppState, redis_pool: fred::prelude::Pool) -> Router {
         .with_secure(false)
         .with_signed(Key::from(state.hmac_secret.expose_secret().as_bytes()));
 
+    let admin_route = Router::new()
+        .route("/dashboard", get(admin_dashboard))
+        .route("/password", get(change_password_form))
+        .route("/password", post(change_password))
+        .route("/logout", post(logout))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            reject_anonymous_users,
+        ));
+
     Router::new()
         .route("/health_check", get(health_check))
         .route("/subscriptions", post(subscribe))
@@ -98,10 +109,7 @@ fn router(state: AppState, redis_pool: fred::prelude::Pool) -> Router {
         .route("/", get(home))
         .route("/login", get(login_form))
         .route("/login", post(login))
-        .route("/admin/dashboard", get(admin_dashboard))
-        .route("/admin/password", get(change_password_form))
-        .route("/admin/password", post(change_password))
-        .route("/admin/logout", post(logout))
+        .nest("/admin", admin_route)
         .with_state(state)
         .layer(MessagesManagerLayer)
         .layer(session_layer)

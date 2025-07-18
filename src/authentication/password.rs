@@ -89,7 +89,7 @@ fn verify_password_hash(
 
 #[tracing::instrument(name = "Change password", skip(password, pool))]
 pub async fn change_password(
-    user_id: Uuid,
+    username: &str,
     password: SecretString,
     pool: &PgPool,
 ) -> Result<(), AuthError> {
@@ -98,9 +98,9 @@ pub async fn change_password(
         r#"
         UPDATE users
         SET password_hash = $2
-        WHERE user_id = $1
+        WHERE username = $1
             "#,
-        user_id,
+        username,
         password_hash.expose_secret(),
     )
     .execute(pool)

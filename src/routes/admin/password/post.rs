@@ -1,12 +1,10 @@
-use axum::{Form, extract::State, response::Redirect};
+use axum::{Extension, Form, extract::State, response::Redirect};
 use axum_messages::Messages;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
 use crate::{
-    authentication::{self, Credentials, validate_credentials},
-    routes::admin::dashboard::get_username,
-    session_state::TypedSession,
+    authentication::{self, Credentials, CurrentUser, validate_credentials},
     startup::AppState,
     utils::E500,
 };
@@ -21,15 +19,10 @@ pub struct FormData {
 #[axum::debug_handler]
 pub async fn change_password(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     messages: Messages,
-    session: TypedSession,
     Form(form): Form<FormData>,
 ) -> Result<Redirect, E500> {
-    let user_id = match session.get_user_id().await? {
-        Some(user_id) => user_id,
-        None => return Ok(Redirect::to("/login")),
-    };
-
     if form.new_password.expose_secret() != form.new_password_check.expose_secret() {
         return Ok(change_password_redirect(
             "You entered two different new passwords - the field values must match.",
@@ -37,9 +30,9 @@ pub async fn change_password(
         ));
     }
 
-    let username = get_username(user_id, &state.db_pool).await?;
+    let username = current_user.username;
     let credentials = Credentials {
-        username,
+        username: username.clone(),
         password: form.current_password,
     };
     if validate_credentials(credentials, &state.db_pool)
@@ -56,7 +49,7 @@ pub async fn change_password(
         return Ok(change_password_redirect(e, messages));
     }
 
-    authentication::change_password(user_id, form.new_password, &state.db_pool).await?;
+    authentication::change_password(&username, form.new_password, &state.db_pool).await?;
     messages.info("Your password has been changed.");
     Ok(Redirect::to("/admin/password"))
 }

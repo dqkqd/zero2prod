@@ -2,7 +2,7 @@ use axum::response::IntoResponse;
 use axum_messages::Messages;
 use reqwest::StatusCode;
 
-pub struct E500(anyhow::Error);
+pub struct E500(pub anyhow::Error);
 
 impl IntoResponse for E500 {
     fn into_response(self) -> axum::response::Response {
