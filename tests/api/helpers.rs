@@ -52,16 +52,6 @@ impl TestApp {
             .expect("failed to execute request")
     }
 
-    pub async fn post_newsletters(&self, body: serde_json::Value) -> reqwest::Response {
-        self.client
-            .post(format!("{}/newsletters", self.address()))
-            .json(&body)
-            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
-            .send()
-            .await
-            .expect("failed to execute request")
-    }
-
     pub async fn post_login(&self, body: serde_json::Value) -> reqwest::Response {
         self.client
             .post(format!("{}/login", self.address()))
@@ -143,6 +133,27 @@ impl TestApp {
     pub async fn post_change_password(&self, body: serde_json::Value) -> reqwest::Response {
         self.client
             .post(format!("{}/admin/password", self.address()))
+            .form(&body)
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn get_newsletters(&self) -> reqwest::Response {
+        self.client
+            .get(format!("{}/admin/newsletters", self.address()))
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn get_newsletters_html(&self) -> String {
+        self.get_newsletters().await.text().await.unwrap()
+    }
+
+    pub async fn post_newsletters(&self, body: serde_json::Value) -> reqwest::Response {
+        self.client
+            .post(format!("{}/admin/newsletters", self.address()))
             .form(&body)
             .send()
             .await

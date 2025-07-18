@@ -24,7 +24,7 @@ use crate::{
     email_client::EmailClient,
     routes::{
         admin_dashboard, change_password, change_password_form, confirm, health_check, home, login,
-        login_form, logout, publish_newsletter, subscribe,
+        login_form, logout, newsletters_form, publish_newsletters, subscribe,
     },
 };
 
@@ -96,6 +96,8 @@ fn router(state: AppState, redis_pool: fred::prelude::Pool) -> Router {
         .route("/password", get(change_password_form))
         .route("/password", post(change_password))
         .route("/logout", post(logout))
+        .route("/newsletters", get(newsletters_form))
+        .route("/newsletters", post(publish_newsletters))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             reject_anonymous_users,
@@ -105,7 +107,6 @@ fn router(state: AppState, redis_pool: fred::prelude::Pool) -> Router {
         .route("/health_check", get(health_check))
         .route("/subscriptions", post(subscribe))
         .route("/subscriptions/confirm", get(confirm))
-        .route("/newsletters", post(publish_newsletter))
         .route("/", get(home))
         .route("/login", get(login_form))
         .route("/login", post(login))

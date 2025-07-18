@@ -17,6 +17,7 @@ pub async fn admin_dashboard(Extension(current_user): Extension<CurrentUser>) ->
     <p> Welcome {username}!</p>
     <p>Available actions:</p>
     <ol>
+      <li><a href="/admin/newsletters">Publish newsletters</a></li>
       <li><a href="/admin/password">Change password</a></li>
       <li>
         <form name="logoutForm" action="/admin/logout" method="post">
