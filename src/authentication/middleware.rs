@@ -11,6 +11,7 @@ use crate::{session_state::TypedSession, startup::AppState, utils::E500};
 
 #[derive(Clone)]
 pub struct CurrentUser {
+    pub user_id: Uuid,
     pub username: String,
 }
 
@@ -27,8 +28,10 @@ pub async fn reject_anonymous_users(
         .map_err(E500)?
     {
         Some(user_id) => {
-            let username = get_username(user_id, &state.db_pool).await?;
-            request.extensions_mut().insert(CurrentUser { username });
+            let username = get_username(&user_id, &state.db_pool).await?;
+            request
+                .extensions_mut()
+                .insert(CurrentUser { user_id, username });
             let response = next.run(request).await;
             Ok(response.into_response())
         }
@@ -37,7 +40,7 @@ pub async fn reject_anonymous_users(
 }
 
 #[tracing::instrument(name = "Get username", skip(pool))]
-async fn get_username(user_id: Uuid, pool: &PgPool) -> Result<String, E500> {
+async fn get_username(user_id: &Uuid, pool: &PgPool) -> Result<String, anyhow::Error> {
     let row = sqlx::query!(
         r#"
     SELECT username
@@ -48,8 +51,7 @@ async fn get_username(user_id: Uuid, pool: &PgPool) -> Result<String, E500> {
     )
     .fetch_one(pool)
     .await
-    .context("Failed to perform a query to retrieve a username")
-    .map_err(E500)?;
+    .context("Failed to perform a query to retrieve a username")?;
 
     Ok(row.username)
 }
