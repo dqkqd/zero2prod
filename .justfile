@@ -7,3 +7,4 @@ init:
 
 @format:
     cargo clippy --fix --allow-dirty --all-targets
+    sqruff fix --force
