@@ -1,12 +1,12 @@
-use axum::response::{Html, IntoResponse};
+use axum::response::Html;
 use axum_messages::Messages;
 
-use crate::utils::{E500, get_all_messages};
+use crate::utils::get_all_messages;
 
 #[axum::debug_handler]
-pub async fn change_password_form(messages: Messages) -> Result<impl IntoResponse, E500> {
+pub async fn change_password_form(messages: Messages) -> Html<String> {
     let message = get_all_messages(messages);
-    Ok(Html(format!(
+    Html(format!(
         r#"
 <!doctype html>
 <html lang="en">
@@ -38,5 +38,5 @@ pub async fn change_password_form(messages: Messages) -> Result<impl IntoRespons
   </body>
 </html>
             "#,
-    )).into_response())
+    ))
 }

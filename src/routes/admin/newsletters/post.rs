@@ -7,7 +7,6 @@ use sqlx::PgPool;
 use crate::{
     domain::SubscriberEmail,
     startup::AppState,
-    utils::E500,
 };
 
 #[derive(Deserialize, Debug)]
@@ -22,7 +21,7 @@ pub async fn publish_newsletters(
     State(state): State<AppState>,
     messages: Messages,
     Form(form): Form<FormData>,
-) -> Result<Redirect, E500> {
+) -> Result<Redirect, AppError> {
     let subscribers = get_confirmed_subscribers(&state.db_pool)
         .await
         .context("failed to get confirmed subscribers.")?;

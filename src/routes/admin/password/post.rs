@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::{
     authentication::{self, Credentials, CurrentUser, validate_credentials},
     startup::AppState,
-    utils::E500,
+    utils::{AppError, e500},
 };
 
 #[derive(Deserialize, Debug)]
@@ -22,7 +22,7 @@ pub async fn change_password(
     Extension(current_user): Extension<CurrentUser>,
     messages: Messages,
     Form(form): Form<FormData>,
-) -> Result<Redirect, E500> {
+) -> Result<Redirect, AppError> {
     if form.new_password.expose_secret() != form.new_password_check.expose_secret() {
         return Ok(change_password_redirect(
             "You entered two different new passwords - the field values must match.",
@@ -49,7 +49,9 @@ pub async fn change_password(
         return Ok(change_password_redirect(e, messages));
     }
 
-    authentication::change_password(&username, form.new_password, &state.db_pool).await?;
+    authentication::change_password(&username, form.new_password, &state.db_pool)
+        .await
+        .map_err(e500)?;
     messages.info("Your password has been changed.");
     Ok(Redirect::to("/admin/password"))
 }

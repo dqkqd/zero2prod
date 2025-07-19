@@ -7,7 +7,11 @@ use axum::{
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{session_state::TypedSession, startup::AppState, utils::E500};
+use crate::{
+    session_state::TypedSession,
+    startup::AppState,
+    utils::{AppError, e500},
+};
 
 #[derive(Clone)]
 pub struct CurrentUser {
@@ -20,12 +24,12 @@ pub async fn reject_anonymous_users(
     session: TypedSession,
     mut request: Request,
     next: Next,
-) -> Result<impl IntoResponse, E500> {
+) -> Result<impl IntoResponse, AppError> {
     match session
         .get_user_id()
         .await
         .context("cannot get user id from session storage")
-        .map_err(E500)?
+        .map_err(e500)?
     {
         Some(user_id) => {
             let username = get_username(&user_id, &state.db_pool).await?;
