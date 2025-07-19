@@ -81,6 +81,8 @@
             doctl
             # faster build on deployment
             cargo-chef
+
+            cargo-nextest
           ];
         };
       }
