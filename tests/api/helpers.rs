@@ -232,7 +232,7 @@ async fn configure_database(configuration: &DatabaseSettings) {
 }
 
 pub fn assert_is_redirect_to(response: &reqwest::Response, location: &str) {
-    assert_eq!(response.status().as_u16(), StatusCode::SEE_OTHER);
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(http::header::LOCATION).unwrap(),
         location

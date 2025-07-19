@@ -13,7 +13,7 @@ async fn confirmations_without_token_are_rejected_with_a_400() {
         .send()
         .await
         .expect("failed to execute request");
-    assert_eq!(response.status().as_u16(), StatusCode::BAD_REQUEST)
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST)
 }
 
 #[tokio::test]
@@ -37,7 +37,7 @@ async fn the_link_returned_by_subscribe_returns_a_200_if_called() {
         .send()
         .await
         .expect("failed to execute request");
-    assert_eq!(response.status().as_u16(), StatusCode::OK)
+    assert_eq!(response.status(), StatusCode::OK)
 }
 
 #[tokio::test]
