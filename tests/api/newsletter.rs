@@ -4,6 +4,10 @@ use wiremock::{Mock, ResponseTemplate, matchers};
 
 use crate::helpers::{ConfirmationLinks, TestApp, assert_is_redirect_to, spawn_app};
 
+fn when_sending_an_email() -> wiremock::MockBuilder {
+    Mock::given(matchers::path("/email")).and(matchers::method("POST"))
+}
+
 #[tokio::test]
 async fn you_must_be_logged_in_to_send_newsletter() {
     let app = spawn_app().await;
@@ -27,7 +31,7 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
     let app = spawn_app().await;
     create_unconfirmed_subscriber(&app).await;
 
-    Mock::given(matchers::any())
+    when_sending_an_email()
         .respond_with(ResponseTemplate::new(StatusCode::OK))
         .expect(0)
         .mount(&app.email_server)
@@ -57,7 +61,7 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
     let app = spawn_app().await;
     create_confirmed_subscriber(&app).await;
 
-    Mock::given(matchers::any())
+    when_sending_an_email()
         .respond_with(ResponseTemplate::new(StatusCode::OK))
         .expect(1)
         .mount(&app.email_server)
@@ -108,7 +112,7 @@ async fn newsletter_creation_is_idempotent() {
     let app = spawn_app().await;
     create_confirmed_subscriber(&app).await;
 
-    Mock::given(matchers::any())
+    when_sending_an_email()
         .respond_with(ResponseTemplate::new(StatusCode::OK))
         .expect(1)
         .mount(&app.email_server)
@@ -143,7 +147,7 @@ async fn concurrent_form_submission_is_handled_gracefully() {
     let app = spawn_app().await;
     create_confirmed_subscriber(&app).await;
 
-    Mock::given(matchers::any())
+    when_sending_an_email()
         .respond_with(ResponseTemplate::new(StatusCode::OK))
         .expect(1)
         .mount(&app.email_server)
@@ -175,8 +179,7 @@ async fn concurrent_form_submission_is_handled_gracefully() {
 }
 
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
-    let _mock_guard = Mock::given(matchers::path("/email"))
-        .and(matchers::method("POST"))
+    let _mock_guard = when_sending_an_email()
         .respond_with(ResponseTemplate::new(StatusCode::OK))
         .named("create unconfirmed subscriber")
         .expect(1)
