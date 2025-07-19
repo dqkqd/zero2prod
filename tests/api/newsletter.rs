@@ -14,12 +14,7 @@ async fn you_must_be_logged_in_to_send_newsletter() {
     let response = app.get_newsletters().await;
     assert_is_redirect_to(&response, "/login");
 
-    let response = app
-        .post_login(serde_json::json!({
-                "username": app.test_user.username,
-                "password": app.test_user.password,
-        }))
-        .await;
+    let response = app.login_test_user().await;
     assert_is_redirect_to(&response, "/admin/dashboard");
 
     let response = app.get_newsletters().await;
@@ -29,6 +24,7 @@ async fn you_must_be_logged_in_to_send_newsletter() {
 #[tokio::test]
 async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
     let app = spawn_app().await;
+    app.login_test_user().await;
     create_unconfirmed_subscriber(&app).await;
 
     when_sending_an_email()
@@ -36,12 +32,6 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
         .expect(0)
         .mount(&app.email_server)
         .await;
-
-    app.post_login(serde_json::json!({
-            "username": app.test_user.username,
-            "password": app.test_user.password,
-    }))
-    .await;
 
     let response = app
         .post_newsletters(serde_json::json!({
@@ -59,6 +49,7 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
 #[tokio::test]
 async fn newsletters_are_delivered_to_confirmed_subscribers() {
     let app = spawn_app().await;
+    app.login_test_user().await;
     create_confirmed_subscriber(&app).await;
 
     when_sending_an_email()
@@ -66,12 +57,6 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
         .expect(1)
         .mount(&app.email_server)
         .await;
-
-    app.post_login(serde_json::json!({
-            "username": app.test_user.username,
-            "password": app.test_user.password,
-    }))
-    .await;
 
     let response = app
         .post_newsletters(serde_json::json!({
@@ -97,12 +82,7 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
 #[tokio::test]
 async fn newsletter_return_422_for_invalid_data(#[case] invalid_body: serde_json::Value) {
     let app = spawn_app().await;
-    app.post_login(serde_json::json!({
-            "username": app.test_user.username,
-            "password": app.test_user.password,
-    }))
-    .await;
-
+    app.login_test_user().await;
     let response = app.post_newsletters(invalid_body).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
@@ -110,6 +90,7 @@ async fn newsletter_return_422_for_invalid_data(#[case] invalid_body: serde_json
 #[tokio::test]
 async fn newsletter_creation_is_idempotent() {
     let app = spawn_app().await;
+    app.login_test_user().await;
     create_confirmed_subscriber(&app).await;
 
     when_sending_an_email()
@@ -117,12 +98,6 @@ async fn newsletter_creation_is_idempotent() {
         .expect(1)
         .mount(&app.email_server)
         .await;
-
-    app.post_login(serde_json::json!({
-            "username": app.test_user.username,
-            "password": app.test_user.password,
-    }))
-    .await;
 
     let newsletter_request_body = serde_json::json!({
         "title": "Newsletter title",
@@ -145,6 +120,7 @@ async fn newsletter_creation_is_idempotent() {
 #[tokio::test]
 async fn concurrent_form_submission_is_handled_gracefully() {
     let app = spawn_app().await;
+    app.login_test_user().await;
     create_confirmed_subscriber(&app).await;
 
     when_sending_an_email()
@@ -152,12 +128,6 @@ async fn concurrent_form_submission_is_handled_gracefully() {
         .expect(1)
         .mount(&app.email_server)
         .await;
-
-    app.post_login(serde_json::json!({
-            "username": app.test_user.username,
-            "password": app.test_user.password,
-    }))
-    .await;
 
     let newsletter_request_body = serde_json::json!({
         "title": "Newsletter title",

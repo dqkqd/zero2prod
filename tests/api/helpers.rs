@@ -52,6 +52,14 @@ impl TestApp {
             .expect("failed to execute request")
     }
 
+    pub async fn login_test_user(&self) -> reqwest::Response {
+        self.post_login(serde_json::json!({
+                "username": self.test_user.username,
+                "password": self.test_user.password,
+        }))
+        .await
+    }
+
     pub async fn post_login(&self, body: serde_json::Value) -> reqwest::Response {
         self.client
             .post(format!("{}/login", self.address()))
