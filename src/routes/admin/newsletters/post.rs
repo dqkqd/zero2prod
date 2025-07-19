@@ -1,12 +1,21 @@
 use anyhow::Context;
-use axum::{Form, extract::State, response::Redirect};
+use axum::{
+    Extension, Form,
+    body::Body,
+    extract::State,
+    http::Response,
+    response::{IntoResponse, Redirect},
+};
 use axum_messages::Messages;
 use serde::Deserialize;
 use sqlx::PgPool;
 
 use crate::{
+    authentication::CurrentUser,
     domain::SubscriberEmail,
+    idempotency::{IdempotencyKey, get_saved_response, save_response},
     startup::AppState,
+    utils::{AppError, e400, e500},
 };
 
 #[derive(Deserialize, Debug)]
@@ -14,17 +23,29 @@ pub struct FormData {
     title: String,
     html_content: String,
     text_content: String,
+    idempotency_key: String,
 }
 
 #[axum::debug_handler]
 pub async fn publish_newsletters(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     messages: Messages,
     Form(form): Form<FormData>,
-) -> Result<Redirect, AppError> {
+) -> Result<Response<Body>, AppError> {
     let subscribers = get_confirmed_subscribers(&state.db_pool)
         .await
         .context("failed to get confirmed subscribers.")?;
+    let idempotency_key: IdempotencyKey = form.idempotency_key.try_into().map_err(e400)?;
+    if let Some(response) =
+        get_saved_response(&state.db_pool, &idempotency_key, current_user.user_id)
+            .await
+            .map_err(e500)?
+    {
+        messages.info("Successfully published a newsletter.");
+        return Ok(response);
+    }
+
     for subscriber in subscribers {
         match subscriber {
             Ok(subscriber) => {
@@ -56,12 +77,24 @@ pub async fn publish_newsletters(
     }
 
     messages.info("Successfully published a newsletter.");
-    Ok(Redirect::to("/admin/newsletters"))
+    let response = Redirect::to("/admin/newsletters").into_response();
+
+    let response = save_response(
+        &state.db_pool,
+        &idempotency_key,
+        current_user.user_id,
+        response,
+    )
+    .await
+    .map_err(e500)?;
+
+    Ok(response)
 }
 
 pub struct ConfirmedSubscriber {
     email: SubscriberEmail,
 }
+
 #[tracing::instrument(name = "Get confirmed subscribers", skip(pool))]
 async fn get_confirmed_subscribers(
     pool: &PgPool,

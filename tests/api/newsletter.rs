@@ -44,6 +44,7 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
             "title": "Newsletter title",
             "html_content": "<p>Newsletter body as HTML</p>",
             "text_content": "Newsletter body as plain text",
+            "idempotency_key": uuid::Uuid::new_v4().to_string(),
         }))
         .await;
     assert_is_redirect_to(&response, "/admin/newsletters");
@@ -73,6 +74,7 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
             "title": "Newsletter title",
             "html_content": "<p>Newsletter body as HTML</p>",
             "text_content": "Newsletter body as plain text",
+            "idempotency_key": uuid::Uuid::new_v4().to_string(),
         }))
         .await;
     assert_is_redirect_to(&response, "/admin/newsletters");
@@ -99,6 +101,41 @@ async fn newsletter_return_422_for_invalid_data(#[case] invalid_body: serde_json
 
     let response = app.post_newsletters(invalid_body).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn newsletter_creation_is_idempotent() {
+    let app = spawn_app().await;
+    create_confirmed_subscriber(&app).await;
+
+    Mock::given(matchers::any())
+        .respond_with(ResponseTemplate::new(StatusCode::OK))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    app.post_login(serde_json::json!({
+            "username": app.test_user.username,
+            "password": app.test_user.password,
+    }))
+    .await;
+
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter title",
+        "html_content": "<p>Newsletter body as HTML</p>",
+        "text_content": "Newsletter body as plain text",
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });
+
+    let response = app.post_newsletters(newsletter_request_body.clone()).await;
+    assert_is_redirect_to(&response, "/admin/newsletters");
+    let html_page = app.get_newsletters_html().await;
+    assert!(html_page.contains("<p><i>Successfully published a newsletter.</i></p>"));
+
+    let response = app.post_newsletters(newsletter_request_body.clone()).await;
+    assert_is_redirect_to(&response, "/admin/newsletters");
+    let html_page = app.get_newsletters_html().await;
+    assert!(html_page.contains("<p><i>Successfully published a newsletter.</i></p>"));
 }
 
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {

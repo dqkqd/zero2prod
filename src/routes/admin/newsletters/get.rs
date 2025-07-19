@@ -6,6 +6,7 @@ use crate::utils::get_all_messages;
 #[axum::debug_handler]
 pub async fn newsletters_form(messages: Messages) -> Html<String> {
     let message = get_all_messages(messages);
+    let idempotency_key = uuid::Uuid::new_v4();
 
     Html(format!(
         r#"
@@ -33,6 +34,7 @@ pub async fn newsletters_form(messages: Messages) -> Html<String> {
         <textarea placeholder="Enter text content" name="text_content"></textarea>
       </label>
       <br>
+      <input hidden type="text" name="idempotency_key" value="{idempotency_key}">
       <button type="submit">Publish</button>
     </form>
     <p><a href="/admin/dashboard">&lt;- Back</a></p>
