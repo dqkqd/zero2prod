@@ -13,9 +13,9 @@ use sqlx::PgPool;
 use crate::{
     authentication::CurrentUser,
     domain::SubscriberEmail,
-    idempotency::{IdempotencyKey, get_saved_response, save_response},
+    idempotency::{IdempotencyKey, NextAction, save_response, try_processing},
     startup::AppState,
-    utils::{AppError, e400, e500},
+    utils::{AppError, e400},
 };
 
 #[derive(Deserialize, Debug)]
@@ -37,13 +37,18 @@ pub async fn publish_newsletters(
         .await
         .context("failed to get confirmed subscribers.")?;
     let idempotency_key: IdempotencyKey = form.idempotency_key.try_into().map_err(e400)?;
-    if let Some(response) =
-        get_saved_response(&state.db_pool, &idempotency_key, current_user.user_id)
-            .await
-            .map_err(e500)?
-    {
-        messages.info("Successfully published a newsletter.");
-        return Ok(response);
+
+    let mut tx = state
+        .db_pool
+        .begin()
+        .await
+        .context("Failed to acquire a Postgres connection from the pool.")?;
+    match try_processing(&mut tx, &idempotency_key, current_user.user_id).await? {
+        NextAction::StartProcessing => {}
+        NextAction::ReturnSavedResponse(response) => {
+            messages.info("Successfully published a newsletter.");
+            return Ok(response);
+        }
     }
 
     for subscriber in subscribers {
@@ -79,14 +84,8 @@ pub async fn publish_newsletters(
     messages.info("Successfully published a newsletter.");
     let response = Redirect::to("/admin/newsletters").into_response();
 
-    let response = save_response(
-        &state.db_pool,
-        &idempotency_key,
-        current_user.user_id,
-        response,
-    )
-    .await
-    .map_err(e500)?;
+    let response = save_response(&mut tx, &idempotency_key, current_user.user_id, response).await?;
+    tx.commit().await.context("cannot commit transaction")?;
 
     Ok(response)
 }

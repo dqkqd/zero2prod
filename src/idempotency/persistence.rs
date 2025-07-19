@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use reqwest::StatusCode;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::idempotency::IdempotencyKey;
@@ -20,7 +20,7 @@ struct HeaderPairRecord {
 }
 
 pub async fn get_saved_response(
-    pool: &PgPool,
+    txn: &mut PgConnection,
     idempotency_key: &IdempotencyKey,
     user_id: Uuid,
 ) -> Result<Option<Response<Body>>, anyhow::Error> {
@@ -28,9 +28,9 @@ pub async fn get_saved_response(
     match sqlx::query!(
         r#"
     SELECT
-        response_status_code,
+        response_status_code AS "response_status_code!",
         response_headers AS "response_headers!: Vec<HeaderPairRecord>",
-        response_body
+        response_body AS "response_body!"
     FROM idempotency
     WHERE
         user_id = $1 AND idempotency_key = $2
@@ -38,7 +38,7 @@ pub async fn get_saved_response(
         user_id,
         idempotency_key.as_ref(),
     )
-    .fetch_optional(pool)
+    .fetch_optional(txn)
     .await?
     {
         Some(r) => {
@@ -68,7 +68,7 @@ pub async fn get_saved_response(
 }
 
 pub async fn save_response(
-    pool: &PgPool,
+    txn: &mut PgConnection,
     idempotency_key: &IdempotencyKey,
     user_id: Uuid,
     response: Response,
@@ -89,16 +89,13 @@ pub async fn save_response(
 
     sqlx::query_unchecked!(
         r#"
-INSERT INTO idempotency
-(
-    user_id,
-    idempotency_key,
-    response_status_code,
-    response_headers,
-    response_body,
-    created_at
-)
-VALUES ($1, $2, $3, $4, $5, now())
+UPDATE idempotency
+SET
+    response_status_code = $3,
+    response_headers = $4,
+    response_body = $5
+WHERE
+    user_id = $1 AND idempotency_key = $2
         "#,
         user_id,
         idempotency_key.as_ref(),
@@ -106,9 +103,46 @@ VALUES ($1, $2, $3, $4, $5, now())
         &header_records,
         body.as_ref(),
     )
-    .execute(pool)
+    .execute(txn)
     .await?;
 
     let response = (status, headers, body).into_response();
     Ok(response)
+}
+
+pub enum NextAction {
+    StartProcessing,
+    ReturnSavedResponse(Response),
+}
+
+pub async fn try_processing(
+    txn: &mut PgConnection,
+    idempotency_key: &IdempotencyKey,
+    user_id: Uuid,
+) -> Result<NextAction, anyhow::Error> {
+    let row_affects = sqlx::query!(
+        r#"
+INSERT INTO idempotency
+(
+    user_id,
+    idempotency_key,
+    created_at
+)
+VALUES ($1, $2, now())
+ON CONFLICT DO NOTHING
+        "#,
+        user_id,
+        idempotency_key.as_ref(),
+    )
+    .execute(&mut *txn)
+    .await?
+    .rows_affected();
+    if row_affects > 0 {
+        Ok(NextAction::StartProcessing)
+    } else {
+        let response = get_saved_response(txn, idempotency_key, user_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("We expected a saved response, we didn't find it"))?;
+        Ok(NextAction::ReturnSavedResponse(response))
+    }
 }
