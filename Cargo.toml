@@ -59,5 +59,6 @@ quickcheck = "1.0.3"
 quickcheck_macros = "1.1.0"
 rstest = "0.25.0"
 serde_json = "1.0.140"
+serde_urlencoded = "0.7.1"
 tower = { version = "0.5.2", features = ["util"] }
 wiremock = "0.6.3"

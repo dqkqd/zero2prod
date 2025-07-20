@@ -15,6 +15,7 @@ use crate::{
     domain::{NewSubscriber, SubscriberEmail, SubscriberName},
     email_client::EmailClient,
     startup::AppState,
+    utils::Transaction,
 };
 
 #[derive(Debug, Deserialize)]
@@ -50,24 +51,20 @@ pub async fn subscribe(
 ) -> Result<(), SubscribeError> {
     let new_subscriber: NewSubscriber =
         form.try_into().map_err(SubscribeError::ValidiationError)?;
-    let mut tx = state
+    let mut txn = state
         .db_pool
         .begin()
         .await
         .context("Failed to acquire a Postgres connection from the pool.")?;
 
-    let subscriber_id = insert_subscriber(&mut tx, &new_subscriber)
+    let subscriber_id = insert_subscriber(&mut txn, &new_subscriber)
         .await
         .context("Failed to insert new subscriber in the database.")?;
 
     let subscription_token = generate_subscription_token();
-    store_token(&mut tx, subscriber_id, &subscription_token)
+    store_token(txn, subscriber_id, &subscription_token)
         .await
         .context("Failed to store the confirmation token for a new subscriber.")?;
-
-    tx.commit()
-        .await
-        .context("Failed to commit SQL transaction to store a new subscriber.")?;
 
     send_confirmation_email(
         &state.email_client,
@@ -100,7 +97,7 @@ pub async fn insert_subscriber(
         new_subscriber.name.as_ref(),
         Utc::now(),
     )
-    .execute(txn)
+    .execute(&mut *txn)
     .await?;
 
     Ok(subscriber_id)
@@ -111,7 +108,7 @@ pub async fn insert_subscriber(
     skip(subscription_token, txn)
 )]
 pub async fn store_token(
-    txn: &mut PgConnection,
+    mut txn: Transaction,
     subscriber_id: Uuid,
     subscription_token: &str,
 ) -> Result<(), sqlx::Error> {
@@ -123,9 +120,10 @@ pub async fn store_token(
         subscription_token,
         subscriber_id,
     )
-    .execute(txn)
+    .execute(&mut *txn)
     .await?;
 
+    txn.commit().await?;
     Ok(())
 }
 

@@ -8,11 +8,10 @@ use axum::{
 };
 use axum_messages::Messages;
 use serde::Deserialize;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 
 use crate::{
     authentication::CurrentUser,
-    domain::SubscriberEmail,
     idempotency::{IdempotencyKey, NextAction, save_response, try_processing},
     startup::AppState,
     utils::{AppError, e400},
@@ -33,86 +32,88 @@ pub async fn publish_newsletters(
     messages: Messages,
     Form(form): Form<FormData>,
 ) -> Result<Response<Body>, AppError> {
-    let subscribers = get_confirmed_subscribers(&state.db_pool)
-        .await
-        .context("failed to get confirmed subscribers.")?;
-    let idempotency_key: IdempotencyKey = form.idempotency_key.try_into().map_err(e400)?;
+    let FormData {
+        title,
+        text_content,
+        html_content,
+        idempotency_key,
+    } = form;
+    let idempotency_key: IdempotencyKey = idempotency_key.try_into().map_err(e400)?;
 
-    let mut tx = state
+    let txn = state
         .db_pool
         .begin()
         .await
         .context("Failed to acquire a Postgres connection from the pool.")?;
-    match try_processing(&mut tx, &idempotency_key, current_user.user_id).await? {
-        NextAction::StartProcessing => {}
+
+    let mut txn = match try_processing(txn, &idempotency_key, current_user.user_id).await? {
+        NextAction::StartProcessing(txn) => txn,
         NextAction::ReturnSavedResponse(response) => {
             messages.info("Successfully published a newsletter.");
             return Ok(response);
         }
-    }
+    };
 
-    for subscriber in subscribers {
-        match subscriber {
-            Ok(subscriber) => {
-                state
-                    .email_client
-                    .send_email(
-                        &subscriber.email,
-                        &form.title,
-                        &form.html_content,
-                        &form.text_content,
-                    )
-                    .await
-                    .with_context(|| {
-                        format!(
-                            "failed to send newsletter issue to {}",
-                            subscriber.email.as_ref()
-                        )
-                    })?;
-            }
-            Err(error) => {
-                tracing::warn!(
-                    error.cause_chain = ?error,
-                    "Skipping a confirmed subscriber.\
-                    Their stored contact details are invalid",
-
-                )
-            }
-        }
-    }
+    let newsletter_issue_id =
+        insert_newsletter_issue(&mut txn, &title, &text_content, &html_content)
+            .await
+            .context("cannot insert newsletter_issue")?;
+    enqueue_delivery_tasks(&mut txn, newsletter_issue_id)
+        .await
+        .context("failed to enqueue delivery tasks")?;
 
     messages.info("Successfully published a newsletter.");
     let response = Redirect::to("/admin/newsletters").into_response();
 
-    let response = save_response(&mut tx, &idempotency_key, current_user.user_id, response).await?;
-    tx.commit().await.context("cannot commit transaction")?;
+    let response = save_response(txn, &idempotency_key, current_user.user_id, response).await?;
 
     Ok(response)
 }
 
-pub struct ConfirmedSubscriber {
-    email: SubscriberEmail,
+async fn insert_newsletter_issue(
+    txn: &mut PgConnection,
+    title: &str,
+    text_content: &str,
+    html_content: &str,
+) -> Result<uuid::Uuid, sqlx::Error> {
+    let newsletter_issue_id = uuid::Uuid::new_v4();
+    sqlx::query!(
+        r#"
+INSERT INTO newsletter_issues (
+    newsletter_issue_id,
+    title,
+    text_content,
+    html_content,
+    published_at
+)
+VALUES ($1, $2, $3, $4, now())
+        "#,
+        &newsletter_issue_id,
+        title,
+        text_content,
+        html_content
+    )
+    .execute(txn)
+    .await?;
+    Ok(newsletter_issue_id)
 }
 
-#[tracing::instrument(name = "Get confirmed subscribers", skip(pool))]
-async fn get_confirmed_subscribers(
-    pool: &PgPool,
-) -> Result<Vec<Result<ConfirmedSubscriber, anyhow::Error>>, sqlx::Error> {
-    let rows = sqlx::query!(
+async fn enqueue_delivery_tasks(
+    txn: &mut PgConnection,
+    newsletter_issue_id: uuid::Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
         r#"
-        SELECT email FROM subscriptions WHERE status = 'confirmed'
+INSERT INTO issue_delivery_queue  (
+    newsletter_issue_id,
+    subscriber_email
+)
+SELECT $1, email
+FROM subscriptions WHERE status = 'confirmed'
         "#,
+        newsletter_issue_id,
     )
-    .fetch_all(pool)
+    .execute(txn)
     .await?;
-
-    let confirmed_subscribers = rows
-        .into_iter()
-        .map(|row| match SubscriberEmail::parse(row.email) {
-            Ok(email) => Ok(ConfirmedSubscriber { email }),
-            Err(error) => Err(anyhow::anyhow!(error)),
-        })
-        .collect();
-
-    Ok(confirmed_subscribers)
+    Ok(())
 }

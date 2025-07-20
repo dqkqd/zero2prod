@@ -2,6 +2,8 @@ use axum::response::IntoResponse;
 use axum_messages::Messages;
 use reqwest::StatusCode;
 
+pub type Transaction = sqlx::Transaction<'static, sqlx::Postgres>;
+
 pub fn e500<E>(e: E) -> AppError
 where
     E: Into<anyhow::Error>,

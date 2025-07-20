@@ -7,10 +7,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use reqwest::StatusCode;
-use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::idempotency::IdempotencyKey;
+use crate::{idempotency::IdempotencyKey, utils::Transaction};
 
 #[derive(sqlx::Type, Debug)]
 #[sqlx(type_name = "header_pair")]
@@ -20,7 +19,7 @@ struct HeaderPairRecord {
 }
 
 pub async fn get_saved_response(
-    txn: &mut PgConnection,
+    mut txn: Transaction,
     idempotency_key: &IdempotencyKey,
     user_id: Uuid,
 ) -> Result<Option<Response<Body>>, anyhow::Error> {
@@ -38,7 +37,7 @@ pub async fn get_saved_response(
         user_id,
         idempotency_key.as_ref(),
     )
-    .fetch_optional(txn)
+    .fetch_optional(&mut *txn)
     .await?
     {
         Some(r) => {
@@ -68,7 +67,7 @@ pub async fn get_saved_response(
 }
 
 pub async fn save_response(
-    txn: &mut PgConnection,
+    mut txn: Transaction,
     idempotency_key: &IdempotencyKey,
     user_id: Uuid,
     response: Response,
@@ -103,20 +102,21 @@ WHERE
         &header_records,
         body.as_ref(),
     )
-    .execute(txn)
+    .execute(&mut *txn)
     .await?;
 
     let response = (status, headers, body).into_response();
+    txn.commit().await?;
     Ok(response)
 }
 
 pub enum NextAction {
-    StartProcessing,
+    StartProcessing(Transaction),
     ReturnSavedResponse(Response),
 }
 
 pub async fn try_processing(
-    txn: &mut PgConnection,
+    mut txn: Transaction,
     idempotency_key: &IdempotencyKey,
     user_id: Uuid,
 ) -> Result<NextAction, anyhow::Error> {
@@ -138,7 +138,7 @@ ON CONFLICT DO NOTHING
     .await?
     .rows_affected();
     if row_affects > 0 {
-        Ok(NextAction::StartProcessing)
+        Ok(NextAction::StartProcessing(txn))
     } else {
         let response = get_saved_response(txn, idempotency_key, user_id)
             .await?

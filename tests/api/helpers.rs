@@ -11,6 +11,8 @@ use wiremock::MockServer;
 use zero2prod::{
     authentication,
     configuration::{DatabaseSettings, get_configuration},
+    email_client::EmailClient,
+    issue_delivery_worker::{ExecutionOutCome, try_execute_task},
     startup::{Application, get_connection_pool},
     telemetry::init_subscriber,
 };
@@ -26,6 +28,7 @@ pub struct TestApp {
     pub port: u16,
     pub pool: PgPool,
     pub email_server: MockServer,
+    pub email_client: EmailClient,
     pub test_user: TestUser,
 }
 
@@ -39,14 +42,14 @@ impl TestApp {
         format!("http://127.0.0.1:{}", self.port)
     }
 
-    pub async fn post_subscriptions(&self, body: &'static str) -> reqwest::Response {
+    pub async fn post_subscriptions(&self, body: &str) -> reqwest::Response {
         self.client
             .post(format!("{}/subscriptions", self.address()))
             .header(
                 http::header::CONTENT_TYPE,
                 mime::APPLICATION_WWW_FORM_URLENCODED.as_ref(),
             )
-            .body(body)
+            .body(body.to_string())
             .send()
             .await
             .expect("failed to execute request")
@@ -167,6 +170,17 @@ impl TestApp {
             .await
             .expect("failed to execute request")
     }
+
+    pub async fn dispatch_all_pending_emails(&self) {
+        loop {
+            if let ExecutionOutCome::EmptyQueue = try_execute_task(&self.email_client, &self.pool)
+                .await
+                .unwrap()
+            {
+                break;
+            }
+        }
+    }
 }
 
 pub async fn spawn_app() -> TestApp {
@@ -190,6 +204,14 @@ pub async fn spawn_app() -> TestApp {
         c
     };
 
+    let sender_email = configuration.email_client.sender().unwrap();
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url.clone(),
+        sender_email,
+        configuration.email_client.authorization_token.clone(),
+        configuration.email_client.timeout(),
+    );
+
     let application = Application::build(configuration.clone())
         .await
         .expect("failed to build application");
@@ -198,7 +220,7 @@ pub async fn spawn_app() -> TestApp {
         application
             .run_until_stopped(listener)
             .await
-            .expect("sever error")
+            .expect("server error")
     });
 
     let client = reqwest::Client::builder()
@@ -212,6 +234,7 @@ pub async fn spawn_app() -> TestApp {
         port: address.port(),
         pool: get_connection_pool(&configuration.database),
         email_server,
+        email_client,
         test_user: TestUser::generate(),
     };
 
